@@ -1,0 +1,269 @@
+-- Enable UUID helpers if not already available
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- =============================
+-- Core Restaurant + Settings
+-- =============================
+CREATE TABLE restaurants (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug            TEXT UNIQUE NOT NULL,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    logo_url        TEXT,
+    hero_image_url  TEXT,
+    phone           TEXT,
+    email           TEXT,
+    timezone        TEXT NOT NULL DEFAULT 'America/Toronto',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE restaurant_settings (
+    restaurant_id            UUID PRIMARY KEY REFERENCES restaurants(id) ON DELETE CASCADE,
+    address_line1            TEXT,
+    address_line2            TEXT,
+    city                     TEXT,
+    province                 TEXT,
+    postal_code              TEXT,
+    country                  TEXT DEFAULT 'Canada',
+    lat                      DECIMAL(10,7),
+    lng                      DECIMAL(10,7),
+    delivery_radius_km       NUMERIC(4,1),
+    delivery_zones_geojson   JSONB,
+    service_types            JSONB NOT NULL DEFAULT '["delivery","pickup"]'::JSONB,
+    payment_methods_accepted JSONB NOT NULL DEFAULT '["card_online","card_terminal","cash"]'::JSONB,
+    hours_json               JSONB,
+    ordering_enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+    min_order_amount         NUMERIC(8,2),
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================
+-- Menu Structure
+-- =============================
+CREATE TABLE menu_categories (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id   UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    sort_order      INT NOT NULL DEFAULT 0,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE menu_items (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id   UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    category_id     UUID NOT NULL REFERENCES menu_categories(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    image_url       TEXT,
+    base_price      NUMERIC(8,2) NOT NULL,
+    calories        INT,
+    is_popular      BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order      INT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE modifier_groups (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id   UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    menu_item_id    UUID NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    selection_type  TEXT NOT NULL DEFAULT 'single', -- single | multi
+    min_options     INT NOT NULL DEFAULT 0,
+    max_options     INT,
+    sort_order      INT NOT NULL DEFAULT 0,
+    required        BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE modifier_options (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id        UUID NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    price_delta     NUMERIC(8,2) NOT NULL DEFAULT 0.00,
+    sort_order      INT NOT NULL DEFAULT 0,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================
+-- Customers & Addresses
+-- =============================
+CREATE TABLE customers (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           TEXT,
+    phone           TEXT,
+    first_name      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE customer_addresses (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id     UUID REFERENCES customers(id) ON DELETE CASCADE,
+    label           TEXT,
+    line1           TEXT NOT NULL,
+    line2           TEXT,
+    city            TEXT NOT NULL,
+    province        TEXT NOT NULL,
+    postal_code     TEXT NOT NULL,
+    country         TEXT NOT NULL DEFAULT 'Canada',
+    lat             DECIMAL(10,7),
+    lng             DECIMAL(10,7),
+    is_default      BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================
+-- Enums for Orders & Payments
+-- =============================
+CREATE TYPE order_status AS ENUM ('received','preparing','ready','enroute','completed','cancelled');
+CREATE TYPE fulfillment_type AS ENUM ('delivery','pickup');
+CREATE TYPE payment_status AS ENUM ('pending','authorized','paid','refunded','failed');
+CREATE TYPE payment_method AS ENUM ('card_online','card_terminal','cash');
+
+-- =============================
+-- Orders & Payments
+-- =============================
+CREATE TABLE orders (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_number     BIGSERIAL UNIQUE, -- short numeric order number for display
+
+    restaurant_id    UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    customer_id      UUID REFERENCES customers(id) ON DELETE SET NULL,
+    fulfillment      fulfillment_type NOT NULL,
+    status           order_status NOT NULL DEFAULT 'received',
+    scheduled_at     TIMESTAMPTZ,
+    placed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at     TIMESTAMPTZ,
+    cancelled_at     TIMESTAMPTZ,
+    subtotal         NUMERIC(10,2) NOT NULL DEFAULT 0,
+    delivery_fee     NUMERIC(10,2) NOT NULL DEFAULT 0,
+    tip_amount       NUMERIC(10,2) NOT NULL DEFAULT 0,
+    taxes            NUMERIC(10,2) NOT NULL DEFAULT 0,
+    total            NUMERIC(10,2) NOT NULL,
+    notes            TEXT,
+    delivery_address JSONB,
+    pickup_name      TEXT,
+    pickup_phone     TEXT,
+    source_channel   TEXT NOT NULL DEFAULT 'web',
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE order_items (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    menu_item_id    UUID REFERENCES menu_items(id),
+    name            TEXT NOT NULL,
+    description     TEXT,
+    unit_price      NUMERIC(10,2) NOT NULL,
+    quantity        INT NOT NULL,
+    total_price     NUMERIC(10,2) NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE order_item_modifiers (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_item_id   UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    modifier_name   TEXT NOT NULL,
+    option_name     TEXT NOT NULL,
+    price_delta     NUMERIC(10,2) NOT NULL DEFAULT 0
+);
+
+CREATE TABLE payments (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    method          payment_method NOT NULL,
+    status          payment_status NOT NULL DEFAULT 'pending',
+    amount          NUMERIC(10,2) NOT NULL,
+    processor       TEXT,
+    processor_id    TEXT,
+    last4           TEXT,
+    auth_code       TEXT,
+    captured_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE order_events (
+    id              BIGSERIAL PRIMARY KEY,
+    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    actor_type      TEXT NOT NULL, -- 'system','cook','delivery','manager'
+    actor_id        UUID,
+    event_type      TEXT NOT NULL, -- 'status_changed','note_added', etc.
+    payload         JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================
+-- Staff (for app roles)
+-- =============================
+CREATE TABLE staff_users (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id  UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+
+    auth_user_id   UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    username       TEXT NOT NULL,
+
+    role           TEXT NOT NULL, -- 'manager' | 'cook' | 'delivery'
+    phone          TEXT,
+    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (restaurant_id, username),
+    UNIQUE (auth_user_id)
+);
+
+-- Live driver location (for tracking)
+CREATE TABLE driver_locations (
+    staff_id    UUID PRIMARY KEY REFERENCES staff_users(id) ON DELETE CASCADE,
+    lat         DECIMAL(10,7),
+    lng         DECIMAL(10,7),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================
+-- Useful indexes
+-- =============================
+CREATE INDEX idx_menu_items_restaurant ON menu_items(restaurant_id);
+CREATE INDEX idx_orders_restaurant_status ON orders(restaurant_id, status);
+CREATE INDEX idx_orders_customer ON orders(customer_id);
+CREATE INDEX idx_payments_order ON payments(order_id);
+CREATE INDEX idx_order_events_order ON order_events(order_id);
+
+-- =============================
+-- Staff (for app roles)
+-- =============================
+CREATE TABLE staff_users (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id  UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+
+    auth_user_id   UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    username       TEXT NOT NULL,
+
+    role           TEXT NOT NULL, -- 'manager' | 'cook' | 'delivery'
+    phone          TEXT,
+    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- username must be unique *per restaurant*
+    UNIQUE (restaurant_id, username),
+    UNIQUE (auth_user_id)
+);
+
+-- Live driver location (for tracking)
+CREATE TABLE driver_locations (
+    staff_id    UUID PRIMARY KEY REFERENCES staff_users(id) ON DELETE CASCADE,
+    lat         DECIMAL(10,7),
+    lng         DECIMAL(10,7),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
