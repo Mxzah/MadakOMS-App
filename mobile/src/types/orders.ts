@@ -11,7 +11,8 @@ export type AssignedOrder = {
   paymentInfo: 'paid_online' | 'pay_on_delivery';
   eta?: string;
   distance?: string;
-  status: 'assigned' | 'ready' | 'pickup' | 'enroute' | 'completed';
+  status: 'assigned' | 'ready' | 'pickup' | 'enroute' | 'completed' | 'failed' | 'cancelled';
+  driverId?: string | null;
 };
 
 export type AvailableOrder = {
@@ -30,7 +31,7 @@ export type AvailableOrder = {
 };
 
 export type KitchenBoardStatus = 'received' | 'preparing' | 'ready';
-export type KitchenStatus = KitchenBoardStatus | 'completed' | 'cancelled' | 'enroute';
+export type KitchenStatus = KitchenBoardStatus | 'completed' | 'cancelled' | 'enroute' | 'failed';
 
 export type KitchenOrder = {
   id: string;

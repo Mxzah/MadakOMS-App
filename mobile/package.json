@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.84.0",
     "expo": "~54.0.25",
     "expo-audio": "~1.0.15",
+    "expo-location": "~19.0.7",
     "expo-status-bar": "~3.0.8",
     "react": "19.1.0",
     "react-dom": "19.1.0",
