@@ -17,7 +17,8 @@ import {
   View,
   Vibration,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAudioPlayer } from 'expo-audio';
 
 import { supabase } from '../lib/supabase';
 import { HistoryOrder, KitchenBoardStatus, KitchenOrder } from '../types/orders';
@@ -92,7 +93,6 @@ type KitchenViewProps = {
     role: string;
   };
   onLogout: () => void;
-  extractRestaurantName: (value: any) => string;
 };
 
 export function KitchenView({ staff, onLogout }: KitchenViewProps) {
@@ -106,7 +106,10 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
   const isDark = settings.theme === 'dark';
 
   return (
-    <View style={[styles.kitchenSafeArea, { backgroundColor: theme.background }]}>
+    <SafeAreaView
+      style={[styles.kitchenSafeArea, { backgroundColor: theme.background }]}
+      edges={['top', 'left', 'right']}
+    >
       <View style={styles.kitchenHeader}>
         <Text style={[styles.kitchenTitle, { color: theme.textPrimary }]}>Cuisine — MadakOMS</Text>
         <Text style={[styles.kitchenSubtitle, { color: theme.textSecondary }]}>
@@ -161,7 +164,7 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
           />
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -180,7 +183,9 @@ function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: Orders
   const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
   const [reasonOrder, setReasonOrder] = useState<KitchenOrder | null>(null);
   const [reasonText, setReasonText] = useState('');
-  const latestIdsRef = useRef<string[]>([]);
+  const latestReceivedIdsRef = useRef<Set<string>>(new Set());
+  const hasMountedRef = useRef(false);
+  const notificationPlayer = useAudioPlayer(NOTIFICATION_SOUND_URL, { downloadFirst: true });
 
   const fetchOrders = useCallback(async () => {
     const { data, error } = await supabase
@@ -202,32 +207,77 @@ function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: Orders
   const playNotification = useCallback(async () => {
     try {
       if (notificationsEnabled) {
-        const { sound } = await Audio.Sound.createAsync({ uri: NOTIFICATION_SOUND_URL });
-        await sound.playAsync();
-        await sound.unloadAsync();
+        if (!notificationPlayer) {
+          return;
+        }
+        await notificationPlayer.seekTo(0);
+        notificationPlayer.play();
       } else {
         Vibration.vibrate(400);
       }
     } catch (err) {
       console.warn('Notification audio impossible', err);
     }
-  }, [notificationsEnabled]);
+  }, [notificationPlayer, notificationsEnabled]);
 
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
 
   useEffect(() => {
-    if (!orders.length) {
-      latestIdsRef.current = [];
-      return;
+    const interval = setInterval(() => {
+      fetchOrders();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [fetchOrders]);
+
+  useEffect(() => {
+    const receivedOrders = orders.filter((order) => order.status === 'received');
+    const nextIds = new Set(receivedOrders.map((order) => order.id));
+
+    if (hasMountedRef.current) {
+      let hasNew = false;
+      nextIds.forEach((id) => {
+        if (!latestReceivedIdsRef.current.has(id)) {
+          hasNew = true;
+        }
+      });
+      if (hasNew) {
+        playNotification();
+      }
+    } else {
+      hasMountedRef.current = true;
     }
 
-    if (orders.length > latestIdsRef.current.length) {
-      playNotification();
-    }
-    latestIdsRef.current = orders.map((order) => order.id);
+    latestReceivedIdsRef.current = nextIds;
   }, [orders, playNotification]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`orders-${restaurantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        (payload) => {
+          const status = (payload.new as any)?.status ?? (payload.old as any)?.status;
+          if (status && ['received', 'preparing', 'ready'].includes(status)) {
+            fetchOrders();
+          }
+        }
+      );
+
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchOrders, restaurantId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -435,7 +485,7 @@ function OrderDetailModal({
               <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
                 {order.fulfillment === 'delivery' ? 'Livraison' : 'À emporter'}
               </Text>
-              <View style={styles.modalSection}>
+              <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                 <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
                   Articles
                 </Text>
@@ -452,7 +502,7 @@ function OrderDetailModal({
                   </View>
                 ))}
               </View>
-              <View style={styles.modalSection}>
+              <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                 <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
                   Client
                 </Text>
@@ -637,20 +687,24 @@ function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
           setDetailVisible(true);
           setDetail(null);
           setDetailLoading(true);
-          supabase
-            .from('orders')
-            .select(ORDER_DETAIL_SELECT)
-            .eq('id', item.id)
-            .maybeSingle()
-            .then(({ data: row, error }) => {
+          (async () => {
+            try {
+              const { data: row, error } = await supabase
+                .from('orders')
+                .select(ORDER_DETAIL_SELECT)
+                .eq('id', item.id)
+                .maybeSingle();
+
               if (error) {
                 Alert.alert('Erreur', 'Impossible de charger les détails.');
                 setDetailVisible(false);
                 return;
               }
               setDetail(row ? mapOrderRowToKitchenOrder(row) : null);
-            })
-            .finally(() => setDetailLoading(false));
+            } finally {
+              setDetailLoading(false);
+            }
+          })();
         }}
       >
         <View style={styles.historyHeader}>
@@ -776,7 +830,7 @@ function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
                 <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
                   {detail.status === 'completed' ? 'Terminée' : 'Annulée'}
                 </Text>
-                <View style={styles.modalSection}>
+                <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                   <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
                     Client
                   </Text>
@@ -792,7 +846,7 @@ function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
                     </Text>
                   ) : null}
                 </View>
-                <View style={styles.modalSection}>
+                <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                   <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
                     Articles
                   </Text>

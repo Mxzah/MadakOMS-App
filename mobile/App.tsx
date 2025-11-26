@@ -1,12 +1,12 @@
 import 'react-native-get-random-values';
 
 import { StatusBar } from 'expo-status-bar';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { supabase } from './src/lib/supabase';
 import { DeliveryView } from './src/screens/DeliveryView';
@@ -191,22 +192,14 @@ export default function App() {
     };
   }, [fetchStaffProfile]);
 
+  let content: ReactNode;
+
   if (screen === 'kitchen' && staffSession) {
-    return (
-      <KitchenView
-        staff={staffSession}
-        onLogout={handleLogout}
-        extractRestaurantName={extractRestaurantName}
-      />
-    );
-  }
-
-  if (screen === 'delivery' && staffSession) {
-    return <DeliveryView staff={staffSession} onLogout={handleLogout} />;
-  }
-
-  if (hydrating) {
-    return (
+    content = <KitchenView staff={staffSession} onLogout={handleLogout} />;
+  } else if (screen === 'delivery' && staffSession) {
+    content = <DeliveryView staff={staffSession} onLogout={handleLogout} />;
+  } else if (hydrating) {
+    content = (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="light" />
         <View style={styles.hydratingContainer}>
@@ -215,127 +208,131 @@ export default function App() {
         </View>
       </SafeAreaView>
     );
-  }
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
-      <KeyboardAvoidingView
-        style={styles.safeArea}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.shellCard}>
-            <View style={styles.hero}>
-              <Text style={styles.heroTitle}>MadakOMS</Text>
-              <Text style={styles.heroSubtitle}>
-                Application interne pour accepter, cuisiner et livrer en temps réel.
-              </Text>
-            </View>
-
-            <View style={styles.formCard}>
-              <Text style={styles.cardEyebrow}>Connexion</Text>
-              <Text style={styles.cardTitle}>Identifiez-vous</Text>
-              <Text style={styles.cardSubtitle}>
-                Utilisez vos accès gérés par le responsable pour rejoindre la cuisine, la livraison
-                ou la gestion.
-              </Text>
-
-              <View style={styles.segmentedControl}>
-                {roles.map((role) => {
-                  const isSelected = selectedRole === role.id;
-                  return (
-                    <TouchableOpacity
-                      key={role.id}
-                      onPress={() => setSelectedRole(role.id)}
-                      style={[styles.segment, isSelected && styles.segmentSelected]}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.segmentText, isSelected && styles.segmentTextSelected]}>
-                        {role.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Nom d’utilisateur</Text>
-                <TextInput
-                  value={username}
-                  onChangeText={setUsername}
-                  keyboardType='default'
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder="chef-cuisine"
-                  placeholderTextColor={colors.muted}
-                  style={styles.input}
-                  textContentType="username"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <View style={styles.passwordLabelRow}>
-                  <Text style={styles.inputLabel}>Mot de passe</Text>
-                  <TouchableOpacity>
-                    <Text style={styles.linkText}>Mot de passe oublié ?</Text>
-                  </TouchableOpacity>
-                </View>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.muted}
-                  secureTextEntry
-                  style={styles.input}
-                  textContentType="password"
-                />
-              </View>
-
-              {feedback && (
-                <View
-                  style={[
-                    styles.feedback,
-                    feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.feedbackText,
-                      feedback.type === 'success'
-                        ? styles.feedbackTextSuccess
-                        : styles.feedbackTextError,
-                    ]}
-                  >
-                    {feedback.message}
-                  </Text>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
-                onPress={handleLogin}
-                activeOpacity={0.85}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Se connecter</Text>
-                )}
-              </TouchableOpacity>
-
-              <View style={styles.helperTextWrapper}>
-                <Text style={styles.helperText}>
-                  Besoin d’un accès ? Demandez au gestionnaire de vous inviter via Supabase.
+  } else {
+    content = (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="light" />
+        <KeyboardAvoidingView
+          style={styles.safeArea}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView contentContainerStyle={styles.scrollContent}>
+            <View style={styles.shellCard}>
+              <View style={styles.hero}>
+                <Text style={styles.heroTitle}>MadakOMS</Text>
+                <Text style={styles.heroSubtitle}>
+                  Application interne pour accepter, cuisiner et livrer en temps réel.
                 </Text>
               </View>
+
+              <View style={styles.formCard}>
+                <Text style={styles.cardEyebrow}>Connexion</Text>
+                <Text style={styles.cardTitle}>Identifiez-vous</Text>
+                <Text style={styles.cardSubtitle}>
+                  Utilisez vos accès gérés par le responsable pour rejoindre la cuisine, la livraison
+                  ou la gestion.
+                </Text>
+
+                <View style={styles.segmentedControl}>
+                  {roles.map((role) => {
+                    const isSelected = selectedRole === role.id;
+                    return (
+                      <TouchableOpacity
+                        key={role.id}
+                        onPress={() => setSelectedRole(role.id)}
+                        style={[styles.segment, isSelected && styles.segmentSelected]}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[styles.segmentText, isSelected && styles.segmentTextSelected]}
+                        >
+                          {role.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Nom d’utilisateur</Text>
+                  <TextInput
+                    value={username}
+                    onChangeText={setUsername}
+                    keyboardType="default"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="chef-cuisine"
+                    placeholderTextColor={colors.muted}
+                    style={styles.input}
+                    textContentType="username"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <View style={styles.passwordLabelRow}>
+                    <Text style={styles.inputLabel}>Mot de passe</Text>
+                    <TouchableOpacity>
+                      <Text style={styles.linkText}>Mot de passe oublié ?</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="••••••••"
+                    placeholderTextColor={colors.muted}
+                    secureTextEntry
+                    style={styles.input}
+                    textContentType="password"
+                  />
+                </View>
+
+                {feedback && (
+                  <View
+                    style={[
+                      styles.feedback,
+                      feedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.feedbackText,
+                        feedback.type === 'success'
+                          ? styles.feedbackTextSuccess
+                          : styles.feedbackTextError,
+                      ]}
+                    >
+                      {feedback.message}
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+                  onPress={handleLogin}
+                  activeOpacity={0.85}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Se connecter</Text>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.helperTextWrapper}>
+                  <Text style={styles.helperText}>
+                    Besoin d’un accès ? Demandez au gestionnaire de vous inviter via Supabase.
+                  </Text>
+                </View>
+              </View>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  return <SafeAreaProvider>{content}</SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({
