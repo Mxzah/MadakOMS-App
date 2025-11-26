@@ -1,12 +1,560 @@
+type AssignedOrder = {
+  id: string;
+  orderNumber: number | null;
+  restaurantName: string;
+  customerName: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerAddress: string;
+  itemsSummary: string;
+  fulfillment: 'delivery' | 'pickup';
+  paymentInfo: 'paid_online' | 'pay_on_delivery';
+  eta?: string;
+  distance?: string;
+  status: 'assigned' | 'ready' | 'pickup' | 'enroute' | 'completed';
+};
+
+type AvailableOrder = {
+  id: string;
+  orderNumber: number;
+  city: string;
+  streetLabel: string;
+  address: string;
+  distance: string;
+  eta: string;
+  status: AssignedOrder['status'];
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  itemsSummary?: string | null;
+};
+
+const deriveDistance = (seed: number) => `${(2 + (Math.abs(seed) % 6) + 0.3).toFixed(1)} km`;
+const deriveEta = (seed: number) => `${8 + (Math.abs(seed) % 9)} min`;
+const getCityFromAddress = (address: string) => {
+  if (!address) return '';
+  const parts = address
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts[1] ?? parts[parts.length - 1] ?? '';
+};
+
+function DeliveryView({ staff, onLogout }: { staff: StaffSession; onLogout: () => void }) {
+  const [order, setOrder] = useState<AssignedOrder | null>(null);
+  const [previewOrder, setPreviewOrder] = useState<AssignedOrder | null>(null);
+  const [availableOrders, setAvailableOrders] = useState<AvailableOrder[]>([]);
+  const [availableLoading, setAvailableLoading] = useState(true);
+  const [deliveryTab, setDeliveryTab] = useState<'current' | 'available'>('current');
+  const [previewItems, setPreviewItems] = useState<
+    Array<{ id: string; name: string; quantity: number; modifiers?: Array<{ modifier_name: string; option_name: string }> }>
+  >([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const openMaps = useCallback(() => {
+    if (!order) return;
+    const address = encodeURIComponent(order.customerAddress);
+    const url =
+      Platform.OS === 'ios'
+        ? `http://maps.apple.com/?daddr=${address}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${address}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Erreur', 'Impossible d’ouvrir l’application de navigation.');
+    });
+  }, [order]);
+
+  const handleStatusChange = (next: AssignedOrder['status']) => {
+    setOrder((prev) => (prev ? { ...prev, status: next } : prev));
+  };
+
+  const fetchOrderItems = useCallback(async (orderId: string) => {
+    try {
+      setPreviewLoading(true);
+      const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_DETAIL_SELECT)
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      const items =
+        data?.order_items?.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          modifiers: item.order_item_modifiers ?? [],
+        })) ?? [];
+
+      setPreviewItems(items);
+    } catch (err) {
+      Alert.alert(
+        'Erreur',
+        err instanceof Error ? err.message : 'Impossible de récupérer les articles.'
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, []);
+
+  const mapAvailableOrder = (row: any) => {
+    const addr = row.delivery_address ?? {};
+    const directAddress =
+      typeof addr.address === 'string' && addr.address.trim().length > 0
+        ? addr.address.trim()
+        : null;
+
+    const fallbackAddress =
+      addr.line1 ??
+      addr.address_line1 ??
+      addr.street ??
+      addr.formatted ??
+      '';
+
+    const addressText = directAddress ?? fallbackAddress;
+    const addressParts = addressText
+      ? addressText
+          .split(',')
+          .map((part: string) => part.trim())
+          .filter(Boolean)
+      : [];
+
+    const streetLabel =
+      addressParts[0] ??
+      fallbackAddress ??
+      'Adresse à confirmer';
+
+    const cityLabel =
+      addressParts[1] ??
+      addr.city ??
+      addr.locality ??
+      addr.municipality ??
+      'Ville à confirmer';
+
+    const orderNumber = row.order_number ?? 0;
+
+    return {
+      id: row.id,
+      orderNumber,
+      city: cityLabel,
+      streetLabel,
+      address: addressText || streetLabel,
+      distance: deriveDistance(orderNumber),
+      eta: deriveEta(orderNumber),
+      status: 'ready' as AssignedOrder['status'],
+      customerName: row.customer?.first_name ?? null,
+      customerPhone: row.customer?.phone ?? null,
+      customerEmail: row.customer?.email ?? null,
+    };
+  };
+
+  const fetchAvailableOrders = useCallback(async () => {
+    setAvailableLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(
+          'id, order_number, delivery_address, customer:customer_id(first_name, phone, email)'
+        )
+        .eq('restaurant_id', staff.restaurantId)
+        .in('status', ['ready', 'assigned', 'enroute'])
+        .order('placed_at', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      const normalized = data?.map(mapAvailableOrder) ?? [];
+      setAvailableOrders(normalized.filter((order) => order.status === 'ready'));
+    } catch (err) {
+      Alert.alert(
+        'Erreur',
+        err instanceof Error
+          ? err.message
+          : 'Impossible de récupérer les commandes disponibles.'
+      );
+    } finally {
+      setAvailableLoading(false);
+    }
+  }, [staff.restaurantId]);
+
+  useEffect(() => {
+    const fetchActiveOrder = async () => {
+      const { data } = await supabase
+        .from('orders')
+        .select(
+          `
+            id,
+            order_number,
+            delivery_address,
+            status,
+            customers:customer_id (
+              first_name,
+              phone,
+              email
+            )
+          `
+        )
+        .eq('restaurant_id', staff.restaurantId)
+        .in('status', ['assigned', 'enroute'])
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        const customerInfo = Array.isArray(data.customers) ? data.customers[0] : data.customers;
+        setOrder({
+          id: data.id,
+          orderNumber: data.order_number,
+          restaurantName: staff.restaurantName,
+          customerName: customerInfo?.first_name ?? null,
+          customerPhone: customerInfo?.phone ?? null,
+          customerEmail: customerInfo?.email ?? null,
+          customerAddress: data.delivery_address?.address ?? 'Adresse à confirmer',
+          itemsSummary: 'Détails disponibles après assignation',
+          fulfillment: 'delivery',
+          paymentInfo: 'paid_online',
+          eta: deriveEta(Number(data.order_number ?? 0)),
+          distance: deriveDistance(Number(data.order_number ?? 0)),
+          status: data.status as AssignedOrder['status'],
+        });
+      } else {
+        setOrder(null);
+      }
+    };
+
+    fetchAvailableOrders();
+    fetchActiveOrder();
+    const interval = setInterval(() => {
+      fetchAvailableOrders();
+      fetchActiveOrder();
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [fetchAvailableOrders, staff.restaurantId, staff.restaurantName]);
+
+  const handleAcceptOrder = async (candidate: AvailableOrder) => {
+    try {
+      // Placeholder for future API call to assign the order.
+      setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
+      setDeliveryTab('current');
+      fetchAvailableOrders();
+      setPreviewOrder(null);
+    } catch (err) {
+      Alert.alert(
+        'Erreur',
+        err instanceof Error ? err.message : 'Impossible d’accepter la commande.'
+      );
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.deliverySafeArea}>
+      <StatusBar style="dark" />
+      <View style={styles.deliveryTopBar}>
+        <View>
+          <Text style={styles.deliveryTopLabel}>Application Livreur</Text>
+          <Text style={styles.deliveryTopValue}>{staff.restaurantName}</Text>
+        </View>
+        <TouchableOpacity style={styles.secondaryButton} onPress={onLogout}>
+          <Text style={styles.secondaryButtonText}>Déconnexion</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.deliveryTabsRow}>
+        <TouchableOpacity
+          style={[
+            styles.deliveryTabButton,
+            deliveryTab === 'current' && styles.deliveryTabButtonActive,
+          ]}
+          onPress={() => setDeliveryTab('current')}
+        >
+          <Text
+            style={[
+              styles.deliveryTabLabel,
+              deliveryTab === 'current' && styles.deliveryTabLabelActive,
+            ]}
+          >
+            Livraisons actives
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.deliveryTabButton,
+            deliveryTab === 'available' && styles.deliveryTabButtonActive,
+          ]}
+          onPress={() => setDeliveryTab('available')}
+        >
+          <Text
+            style={[
+              styles.deliveryTabLabel,
+              deliveryTab === 'available' && styles.deliveryTabLabelActive,
+            ]}
+          >
+            Commandes disponibles
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.deliveryWrapper}>
+        {deliveryTab === 'current' ? (
+          order ? (
+            <DeliveryCard
+              order={order}
+              onNavigate={openMaps}
+              onChangeStatus={handleStatusChange}
+            />
+          ) : (
+            <View style={styles.deliveryEmpty}>
+              <Text style={styles.deliveryEmptyTitle}>Aucune livraison active</Text>
+              <Text style={styles.deliveryEmptySubtitle}>
+                Dès qu’une commande sera assignée, elle apparaîtra ici.
+              </Text>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => setDeliveryTab('available')}
+              >
+                <Text style={styles.primaryButtonText}>Voir les commandes disponibles</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        ) : (
+          <AvailableOrdersList
+            orders={availableOrders}
+            loading={availableLoading}
+            onAccept={handleAcceptOrder}
+            onPreview={(candidate) => {
+              setPreviewOrder({
+                id: candidate.id,
+                orderNumber: candidate.orderNumber,
+                restaurantName: staff.restaurantName,
+                customerName: candidate.customerName ?? null,
+                customerPhone: candidate.customerPhone ?? null,
+                customerEmail: candidate.customerEmail ?? null,
+                customerAddress: candidate.address,
+                itemsSummary: candidate.itemsSummary ?? 'Détails disponibles après assignation',
+                fulfillment: 'delivery',
+                paymentInfo: 'paid_online',
+                eta: candidate.eta,
+                status: candidate.status ?? 'ready',
+              });
+              setPreviewItems([]);
+              fetchOrderItems(candidate.id);
+            }}
+          />
+        )}
+      </ScrollView>
+
+      <Modal
+        visible={Boolean(previewOrder)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPreviewOrder(null)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setPreviewOrder(null)}>
+          <Pressable
+            style={[
+              styles.modalCard,
+              { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+            ]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            {previewLoading ? (
+              <View style={styles.orderEmptyState}>
+                <ActivityIndicator color={colors.accent} />
+                <Text style={styles.orderEmptyCopy}>Chargement…</Text>
+              </View>
+            ) : (
+              previewOrder && (
+                <DeliveryCard
+                  order={previewOrder}
+                  onChangeStatus={(status) =>
+                    setPreviewOrder((prev) => (prev ? { ...prev, status } : prev))
+                  }
+                  onClose={() => setPreviewOrder(null)}
+                  forceStatusLabel="Prête"
+                  items={previewItems}
+                />
+              )
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+function AvailableOrdersList({
+  orders,
+  loading,
+  onAccept,
+  onPreview,
+}: {
+  orders: AvailableOrder[];
+  loading: boolean;
+  onAccept: (order: AvailableOrder) => void;
+  onPreview: (order: AvailableOrder) => void;
+}) {
+  if (loading) {
+    return (
+      <View style={styles.deliveryEmpty}>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.deliveryEmptySubtitle}>Chargement des commandes prêtes…</Text>
+      </View>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <View style={styles.deliveryEmpty}>
+        <Text style={styles.deliveryEmptyTitle}>Aucune commande prête</Text>
+        <Text style={styles.deliveryEmptySubtitle}>
+          Les nouvelles commandes prêtes apparaîtront ici dès qu’elles sont disponibles.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.availableList}>
+      {orders.map((order) => (
+        <View key={order.id} style={styles.availableCard}>
+          <View style={styles.availableCardHeader}>
+            <View>
+              <Text style={styles.availableOrderNumber}>Commande #{order.orderNumber}</Text>
+            </View>
+            <Text style={styles.availableCity}>{order.city}</Text>
+          </View>
+          <Text style={styles.availableAddress}>{order.address}</Text>
+          <View style={styles.availableMetaRow}>
+            <Text style={styles.availableMeta}>{order.distance}</Text>
+            <Text style={styles.availableMeta}>{order.eta}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => onPreview(order)}
+          >
+            <Text style={styles.secondaryButtonText}>Voir les informations</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => onAccept(order)}
+          >
+            <Text style={styles.primaryButtonText}>Accepter la commande</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function DeliveryCard({
+  order,
+  onNavigate,
+  onChangeStatus,
+  onClose,
+  forceStatusLabel,
+  items,
+}: {
+  order: AssignedOrder;
+  onNavigate?: () => void;
+  onChangeStatus: (status: AssignedOrder['status']) => void;
+  onClose?: () => void;
+  forceStatusLabel?: string;
+  items?: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    modifiers?: Array<{ modifier_name: string; option_name: string }>;
+  }>;
+}) {
+  const currentStatus =
+    DELIVERY_STATUSES.find((status) => status.id === order.status) ?? {
+      label: order.status,
+    };
+  const cityLabel = getCityFromAddress(order.customerAddress);
+
+  return (
+    <View style={styles.availableCard}>
+      <View style={styles.availableCardHeader}>
+        <Text style={styles.availableOrderNumber}>Commande #{order.orderNumber ?? '—'}</Text>
+        <Text style={styles.availableCity}>{cityLabel || forceStatusLabel || currentStatus.label}</Text>
+      </View>
+      <Text style={styles.availableAddress}>{order.customerAddress}</Text>
+      <View style={styles.availableMetaRow}>
+        <Text style={styles.availableMeta}>
+          Paiement : {order.paymentInfo === 'paid_online' ? 'Payé en ligne' : 'Payable à la porte'}
+        </Text>
+        {order.eta ? <Text style={styles.availableMeta}>ETA : {order.eta}</Text> : null}
+      </View>
+
+      <View style={styles.deliveryActionButtons}>
+        {onNavigate && (
+          <TouchableOpacity style={styles.availableSecondaryButton} onPress={onNavigate}>
+            <Text style={styles.availableSecondaryButtonText}>Naviguer</Text>
+          </TouchableOpacity>
+        )}
+        {!onClose && order.status === 'assigned' && (
+          <TouchableOpacity
+            style={styles.availablePrimaryButton}
+            onPress={() => onChangeStatus('pickup')}
+          >
+            <Text style={styles.availablePrimaryButtonText}>Je pars au resto</Text>
+          </TouchableOpacity>
+        )}
+        {order.status === 'pickup' && (
+          <TouchableOpacity
+            style={styles.availablePrimaryButton}
+            onPress={() => onChangeStatus('enroute')}
+          >
+            <Text style={styles.availablePrimaryButtonText}>Départ vers client</Text>
+          </TouchableOpacity>
+        )}
+        {order.status === 'enroute' && (
+          <TouchableOpacity
+            style={styles.availablePrimaryButton}
+            onPress={() => onChangeStatus('completed')}
+          >
+            <Text style={styles.availablePrimaryButtonText}>Livraison terminée</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {items && items.length > 0 && (order.status === 'assigned' || order.status === 'enroute') ? (
+        <View style={[styles.deliveryItemsList, { marginTop: 16 }]}>
+          {items.map((item) => (
+            <View key={item.id} style={styles.deliveryItemRow}>
+              <Text style={styles.deliveryItemTitle}>
+                {item.quantity} × {item.name}
+              </Text>
+              {item.modifiers && item.modifiers.length > 0 && (
+                <Text style={styles.deliveryItemMeta}>
+                  {item.modifiers.map((mod) => mod.option_name).join(', ')}
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {onClose && (
+        <TouchableOpacity style={styles.availableSecondaryButton} onPress={onClose}>
+          <Text style={styles.availableSecondaryButtonText}>Fermer</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
 import 'react-native-get-random-values';
 
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Pressable,
   Platform,
@@ -18,9 +566,11 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Vibration,
 } from 'react-native';
 
 import { supabase } from './src/lib/supabase';
+import { Audio } from 'expo-av';
 
 const colors = {
   background: '#F5F6FB',
@@ -83,6 +633,22 @@ const roles = [
   { id: 'manager', label: 'Gestion' },
 ] as const;
 
+const DELIVERY_STATUSES = [
+  { id: 'assigned', label: 'Assignée' },
+  { id: 'ready', label: 'Prête' },
+  { id: 'pickup', label: 'Ramasser au resto' },
+  { id: 'enroute', label: 'En route' },
+  { id: 'completed', label: 'Livrée' },
+] as const;
+
+const kitchenTabs = [
+  { id: 'orders', label: 'Commandes' },
+  { id: 'history', label: 'Historique' },
+  { id: 'settings', label: 'Réglages' },
+] as const;
+
+type KitchenTabId = (typeof kitchenTabs)[number]['id'];
+
 type RoleId = (typeof roles)[number]['id'];
 const getRoleLabel = (roleId: string) => roles.find((role) => role.id === roleId)?.label ?? roleId;
 
@@ -90,6 +656,7 @@ type StaffSession = {
   role: RoleId;
   restaurantId: string;
   restaurantName: string;
+  staffUserId: string;
 };
 
 type KitchenBoardStatus = 'received' | 'preparing' | 'ready';
@@ -152,16 +719,16 @@ export default function App() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null
   );
-  const [screen, setScreen] = useState<'login' | 'kitchen'>('login');
+  const [screen, setScreen] = useState<'login' | 'kitchen' | 'delivery'>('login');
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [hydrating, setHydrating] = useState(true);
 
-  const fetchStaffProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('staff_users')
-      .select('role,is_active,restaurant_id,restaurant:restaurants(name)')
-      .eq('auth_user_id', userId)
-      .maybeSingle();
+const fetchStaffProfile = useCallback(async (userId: string) => {
+  const { data, error } = await supabase
+    .from('staff_users')
+    .select('id,role,is_active,restaurant_id,restaurant:restaurants(name)')
+    .eq('auth_user_id', userId)
+    .maybeSingle();
 
     if (error) {
       throw new Error("Impossible de vérifier votre rôle, réessayez.");
@@ -220,8 +787,9 @@ export default function App() {
         role: staffRecord.role as RoleId,
         restaurantId: staffRecord.restaurant_id,
         restaurantName: extractRestaurantName(staffRecord.restaurant),
+        staffUserId: staffRecord.id,
       });
-      setScreen('kitchen');
+      setScreen(staffRecord.role === 'delivery' ? 'delivery' : 'kitchen');
       setFeedback(null);
     } catch (err) {
       const message =
@@ -258,9 +826,10 @@ export default function App() {
             role: staffRecord.role as RoleId,
             restaurantId: staffRecord.restaurant_id,
             restaurantName: extractRestaurantName(staffRecord.restaurant),
+            staffUserId: staffRecord.id,
           });
           setSelectedRole(staffRecord.role as RoleId);
-          setScreen(staffRecord.role === 'cook' ? 'kitchen' : 'login');
+          setScreen(staffRecord.role === 'delivery' ? 'delivery' : 'kitchen');
         }
       } catch (err) {
         console.warn(err);
@@ -287,12 +856,11 @@ export default function App() {
   }, [fetchStaffProfile]);
 
   if (screen === 'kitchen' && staffSession) {
-    return (
-      <KitchenView
-        staff={staffSession}
-        onLogout={handleLogout}
-      />
-    );
+    return <KitchenView staff={staffSession} onLogout={handleLogout} />;
+  }
+
+  if (screen === 'delivery' && staffSession) {
+    return <DeliveryView staff={staffSession} onLogout={handleLogout} />;
   }
 
   if (hydrating) {
@@ -302,7 +870,7 @@ export default function App() {
         <View style={styles.hydratingContainer}>
           <ActivityIndicator color={colors.accent} />
           <Text style={styles.orderEmptyCopy}>Chargement…</Text>
-        </View>
+    </View>
       </SafeAreaView>
     );
   }
@@ -699,6 +1267,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    
     marginTop: 12,
   },
   logoutButton: {
@@ -725,6 +1294,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 14,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
   kitchenTabButtonActive: {
     backgroundColor: colors.accent,
@@ -870,6 +1444,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
   },
   filterPillActive: {
     backgroundColor: colors.dark,
@@ -1051,15 +1630,255 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
+  deliveryWrapper: {
+    flexGrow: 1,
+    padding: 20,
+    gap: 16,
+  },
+  deliverySafeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  deliveryTopBar: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  deliveryTopLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    color: colors.muted,
+  },
+  deliveryTopValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  deliveryTabsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  deliveryTabButton: {
+    flex: 1,
+    borderRadius: 20,
+    paddingVertical: 10,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  deliveryTabButtonActive: {
+    backgroundColor: colors.accent,
+  },
+  deliveryTabLabel: {
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  deliveryTabLabelActive: {
+    color: '#FFFFFF',
+  },
+  availableList: {
+    gap: 16,
+  },
+  availableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
+  availableCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  availableOrderNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  availableCity: {
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  availableAddress: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  availableMetaRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  availableMeta: {
+    color: colors.muted,
+    fontSize: 13,
+  },
+  availableSecondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 18,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  availableSecondaryButtonText: {
+    color: colors.dark,
+    fontWeight: '600',
+  },
+  availablePrimaryButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 18,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  availablePrimaryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  deliveryActionButtons: {
+    gap: 10,
+    marginTop: 12,
+  },
+  deliveryEmpty: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
+  deliveryEmptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  deliveryEmptySubtitle: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: 'center',
+  },
+  deliveryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 24,
+    gap: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 4,
+  },
+  deliveryHeader: {
+    gap: 12,
+  },
+  deliveryOrderNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  deliveryStatusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  deliveryStatusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: '#E5E7EB',
+  },
+  deliveryStatusBadgeActive: {
+    backgroundColor: colors.accent,
+  },
+  deliveryStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  deliveryStatusTextActive: {
+    color: '#FFFFFF',
+  },
+  deliverySection: {
+    gap: 4,
+  },
+  deliveryLabel: {
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    color: colors.muted,
+  },
+  deliveryValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  deliveryAddress: {
+    fontSize: 15,
+    color: colors.dark,
+  },
+  deliveryMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  deliveryMeta: {
+    color: colors.muted,
+    fontSize: 13,
+  },
+  deliveryActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  deliveryItemsList: {
+    marginTop: 8,
+    gap: 6,
+  },
+  deliveryItemRow: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  deliveryItemTitle: {
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  deliveryItemMeta: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  reasonModalCard: {
+    margin: 20,
+    borderRadius: 24,
+    padding: 24,
+    gap: 16,
+  },
+  reasonInput: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  reasonActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
 });
-
-const kitchenTabs = [
-  { id: 'orders', label: 'Commandes' },
-  { id: 'history', label: 'Historique' },
-  { id: 'settings', label: 'Réglages' },
-] as const;
-
-type KitchenTabId = (typeof kitchenTabs)[number]['id'];
 
 function KitchenView({ staff, onLogout }: { staff: StaffSession; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<KitchenTabId>('orders');
@@ -1140,7 +1959,12 @@ function KitchenView({ staff, onLogout }: { staff: StaffSession; onLogout: () =>
 
       <View style={styles.kitchenContent}>
         {activeTab === 'orders' ? (
-          <OrdersTab restaurantId={staff.restaurantId} theme={kitchenTheme} isDark={isDark} />
+          <OrdersTab
+            restaurantId={staff.restaurantId}
+            theme={kitchenTheme}
+            isDark={isDark}
+            notificationsEnabled={settings.soundEnabled}
+          />
         ) : activeTab === 'history' ? (
           <HistoryTab restaurantId={staff.restaurantId} theme={kitchenTheme} isDark={isDark} />
         ) : (
@@ -1163,19 +1987,70 @@ const ORDER_FILTERS: Array<{ id: KitchenBoardStatus; label: string }> = [
   { id: 'ready', label: 'Prêtes' },
 ];
 
+const NOTIFICATION_SOUND_URL =
+  'https://actions.google.com/sounds/v1/alarms/beep_short.ogg';
+
 type OrdersTabProps = {
   restaurantId: string;
   theme: KitchenThemeTokens;
   isDark: boolean;
+  notificationsEnabled: boolean;
 };
 
-function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
+function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: OrdersTabProps) {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<KitchenBoardStatus>('received');
   const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
   const [mutatingOrderId, setMutatingOrderId] = useState<string | null>(null);
+  const orderIdsRef = useRef<Set<string>>(new Set());
+  const hasInitializedRef = useRef(false);
+  const [reasonModal, setReasonModal] = useState<{ order: KitchenOrder; reason: string } | null>(
+    null
+  );
+  const [reasonSubmitting, setReasonSubmitting] = useState(false);
+
+  const playNotificationSound = useCallback(async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: NOTIFICATION_SOUND_URL },
+        { shouldPlay: true }
+      );
+      await sound.playAsync();
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (err) {
+      console.warn('Notification sound failed', err);
+      Vibration.vibrate(400);
+    }
+  }, []);
+
+  const notifyNewOrders = useCallback(
+    async (list: KitchenOrder[]) => {
+      const prevIds = orderIdsRef.current;
+      const nextIds = new Set(list.map((order) => order.id));
+      const hasNew = list.some((order) => !prevIds.has(order.id));
+      orderIdsRef.current = nextIds;
+
+      if (!hasInitializedRef.current) {
+        hasInitializedRef.current = true;
+        return;
+      }
+
+      if (hasNew) {
+        if (notificationsEnabled) {
+          await playNotificationSound();
+        } else {
+          Vibration.vibrate(400);
+        }
+      }
+    },
+    [notificationsEnabled, playNotificationSound]
+  );
 
   const fetchOrders = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -1195,6 +2070,7 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
 
       const normalized = data?.map(mapOrderRowToKitchenOrder) ?? [];
 
+      await notifyNewOrders(normalized);
       setOrders(normalized);
     } catch (err) {
       Alert.alert(
@@ -1209,7 +2085,7 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
       }
       setRefreshing(false);
     }
-  }, [restaurantId]);
+  }, [restaurantId, notifyNewOrders]);
 
   useEffect(() => {
     fetchOrders();
@@ -1235,12 +2111,16 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
   }, [fetchOrders]);
 
   const updateOrderStatus = useCallback(
-    async (order: KitchenOrder, nextStatus: 'preparing' | 'ready' | 'cancelled') => {
+    async (
+      order: KitchenOrder,
+      nextStatus: 'preparing' | 'ready' | 'cancelled',
+      extra?: { cancellation_reason?: string }
+    ) => {
       setMutatingOrderId(order.id);
       try {
         const { error } = await supabase
           .from('orders')
-          .update({ status: nextStatus })
+          .update({ status: nextStatus, ...extra })
           .eq('id', order.id);
 
         if (error) {
@@ -1266,21 +2146,71 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
 
   const handleCancel = useCallback(
     (order: KitchenOrder) => {
-      Alert.alert(
-        'Annuler la commande',
-        'Êtes-vous certain de vouloir annuler cette commande ?',
-        [
-          { text: 'Non', style: 'cancel' },
-          {
-            text: 'Oui, annuler',
-            style: 'destructive',
-            onPress: () => updateOrderStatus(order, 'cancelled'),
-          },
-        ]
-      );
+      if (order.status === 'received') {
+        if (Platform.OS === 'ios') {
+          Alert.prompt(
+            'Refuser la commande',
+            'Indiquez la raison du refus.',
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Confirmer',
+                style: 'destructive',
+                onPress: async (input?: string) => {
+                  const trimmed = input?.trim();
+                  if (!trimmed) {
+                    Alert.alert('Raison requise', 'Veuillez indiquer la raison du refus.');
+                    return;
+                  }
+                  await updateOrderStatus(order, 'cancelled', {
+                    cancellation_reason: trimmed,
+                  });
+                  setSelectedOrder(null);
+                },
+              },
+            ],
+            'plain-text'
+          );
+        } else {
+          setReasonModal({ order, reason: '' });
+        }
+        return;
+      }
+
+      Alert.alert('Annuler la commande', 'Êtes-vous certain de vouloir annuler cette commande ?', [
+        { text: 'Non', style: 'cancel' },
+        {
+          text: 'Oui, annuler',
+          style: 'destructive',
+          onPress: () => updateOrderStatus(order, 'cancelled'),
+        },
+      ]);
     },
     [updateOrderStatus]
   );
+
+  const submitReason = useCallback(async () => {
+    if (!reasonModal?.reason.trim()) {
+      Alert.alert('Raison requise', 'Veuillez indiquer la raison du refus.');
+      return;
+    }
+
+    setReasonSubmitting(true);
+    try {
+      await updateOrderStatus(reasonModal.order, 'cancelled', {
+        cancellation_reason: reasonModal.reason.trim(),
+      });
+      setSelectedOrder(null);
+      setReasonModal(null);
+    } catch (err) {
+      Alert.alert(
+        'Erreur',
+        err instanceof Error ? err.message : 'Impossible de refuser la commande.'
+      );
+    } finally {
+      setReasonSubmitting(false);
+    }
+  }, [reasonModal, updateOrderStatus]);
 
   const renderOrder = ({ item }: { item: KitchenOrder }) => {
     const itemCount = item.items.reduce((sum, i) => sum + (i.quantity ?? 0), 0);
@@ -1311,11 +2241,11 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
 
         <View style={styles.orderMetaRow}>
           <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
-            Placée: {formatTime(item.placedAt)}
+            Placée: {formatDateTime(item.placedAt)}
           </Text>
           {item.scheduledAt ? (
             <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
-              Prévue: {formatTime(item.scheduledAt)}
+              Prévue: {formatDateTime(item.scheduledAt)}
             </Text>
           ) : null}
           <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
@@ -1447,10 +2377,8 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
                   Commande #{selectedOrder.orderNumber ?? '—'}
                 </Text>
                 <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
-                  {selectedOrder.fulfillment === 'delivery'
-                    ? 'Livraison'
-                    : 'Pickup'}{' '}
-                  · Placée {formatTime(selectedOrder.placedAt)}
+                  {selectedOrder.fulfillment === 'delivery' ? 'Livraison' : 'Pickup'} · Placée{' '}
+                  {formatDateTime(selectedOrder.placedAt)}
                 </Text>
 
                 <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
@@ -1529,15 +2457,84 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.destructiveButton}
-                    onPress={() => handleCancel(selectedOrder)}
-                  >
-                    <Text style={styles.destructiveButtonText}>Annuler</Text>
-                  </TouchableOpacity>
+                  {selectedOrder.status !== 'preparing' && selectedOrder.status !== 'ready' && (
+                    <TouchableOpacity
+                      style={styles.destructiveButton}
+                      onPress={() => handleCancel(selectedOrder)}
+                    >
+                      <Text style={styles.destructiveButtonText}>
+                        {selectedOrder.status === 'received' ? 'Refuser' : 'Annuler'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </>
             )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={Boolean(reasonModal)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReasonModal(null)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setReasonModal(null)}>
+          <Pressable
+            style={[styles.reasonModalCard, { backgroundColor: theme.surface }]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Raison du refus</Text>
+            <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
+              Merci d’indiquer la raison du refus pour garder une trace interne.
+            </Text>
+            <TextInput
+              style={[
+                styles.reasonInput,
+                {
+                  color: theme.textPrimary,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surfaceMuted,
+                },
+              ]}
+              multiline
+              numberOfLines={4}
+              placeholder="Ex: Article indisponible, client a appelé pour annuler..."
+              placeholderTextColor={theme.textSecondary}
+              value={reasonModal?.reason ?? ''}
+              onChangeText={(text) =>
+                setReasonModal((prev) => (prev ? { ...prev, reason: text } : prev))
+              }
+            />
+            <View style={styles.reasonActions}>
+              <TouchableOpacity
+                style={[
+                  styles.secondaryButton,
+                  { borderColor: theme.border, backgroundColor: theme.surface },
+                ]}
+                onPress={() => setReasonModal(null)}
+              >
+                <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>
+                  Fermer
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalPrimaryButton,
+                  reasonSubmitting && styles.modalPrimaryButtonDisabled,
+                ]}
+                disabled={reasonSubmitting}
+                onPress={submitReason}
+              >
+                {reasonSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryButtonText}>Confirmer</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1545,12 +2542,17 @@ function OrdersTab({ restaurantId, theme, isDark }: OrdersTabProps) {
   );
 }
 
-const formatTime = (isoString: string | null) => {
+const formatDateTime = (isoString: string | null) => {
   if (!isoString) {
     return '—';
   }
   const date = new Date(isoString);
-  return date.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString('fr-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const getPriorityFlags = (order: KitchenOrder) => {
@@ -1811,7 +2813,7 @@ function HistoryTab({
         </View>
         <Text style={[styles.historyMeta, { color: theme.textSecondary }]}>
           {item.fulfillment === 'delivery' ? 'Livraison' : 'Pickup'} · Placée{' '}
-          {formatTime(item.placedAt)}
+          {formatDateTime(item.placedAt)}
         </Text>
         <Text style={[styles.historyMeta, { color: theme.textSecondary }]}>
           {historySubtitle(item)}
@@ -1938,7 +2940,7 @@ function HistoryTab({
                 </Text>
                 <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
                   {selectedOrder.fulfillment === 'delivery' ? 'Livraison' : 'Pickup'} · Placée{' '}
-                  {formatTime(selectedOrder.placedAt)}
+                  {formatDateTime(selectedOrder.placedAt)}
                 </Text>
                 <Text style={[styles.orderMetaItem, { color: theme.textSecondary }]}>
                   Statut: {statusLabel(selectedOrder.status)}
@@ -2027,12 +3029,12 @@ const statusLabel = (status: string) => {
 
 const historySubtitle = (order: HistoryOrder) => {
   if (order.status === 'completed' && order.completedAt) {
-    return `Terminée ${formatTime(order.completedAt)}`;
+    return `Terminée ${formatDateTime(order.completedAt)}`;
   }
   if (order.status === 'cancelled' && order.cancelledAt) {
-    return `Annulée ${formatTime(order.cancelledAt)}`;
+    return `Annulée ${formatDateTime(order.cancelledAt)}`;
   }
-  return `Modifiée ${formatTime(order.updatedAt)}`;
+  return `Modifiée ${formatDateTime(order.updatedAt)}`;
 };
 
 const historyStatusStyle = (status: string) => {

@@ -153,6 +153,7 @@ CREATE TABLE orders (
     pickup_name      TEXT,
     pickup_phone     TEXT,
     source_channel   TEXT NOT NULL DEFAULT 'web',
+    cancellation_reason TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
