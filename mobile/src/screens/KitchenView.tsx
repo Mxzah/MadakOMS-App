@@ -19,7 +19,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAudioPlayer } from 'expo-audio';
-
 import { supabase } from '../lib/supabase';
 import { HistoryOrder, KitchenBoardStatus, KitchenOrder } from '../types/orders';
 import {

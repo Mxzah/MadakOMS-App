@@ -49,7 +49,7 @@ type DeliveryViewProps = {
 };
 
 export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
-  const [order, setOrder] = useState<AssignedOrder | null>(null);
+  const [activeOrders, setActiveOrders] = useState<AssignedOrder[]>([]);
   const [previewOrder, setPreviewOrder] = useState<AssignedOrder | null>(null);
   const [availableOrders, setAvailableOrders] = useState<AvailableOrder[]>([]);
   const [availableLoading, setAvailableLoading] = useState(true);
@@ -64,19 +64,19 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   >([]);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  const openMaps = useCallback(() => {
-    if (!order) {
+  const openMaps = useCallback((address: string) => {
+    if (!address) {
       return;
     }
-    const address = encodeURIComponent(order.customerAddress);
+    const encoded = encodeURIComponent(address);
     const url =
       Platform.OS === 'ios'
-        ? `http://maps.apple.com/?daddr=${address}`
-        : `https://www.google.com/maps/dir/?api=1&destination=${address}`;
+        ? `http://maps.apple.com/?daddr=${encoded}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
     Linking.openURL(url).catch(() => {
       Alert.alert('Erreur', 'Impossible d’ouvrir l’application de navigation.');
     });
-  }, [order]);
+  }, []);
 
   const fetchOrderItems = useCallback(async (orderId: string) => {
     try {
@@ -182,8 +182,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
   }, [mapAvailableOrder, staff.restaurantId]);
 
-  const fetchActiveOrder = useCallback(async () => {
-    const { data } = await supabase
+  const fetchActiveOrders = useCallback(async () => {
+    const { data, error } = await supabase
       .from('orders')
       .select(
         `
@@ -200,49 +200,64 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       )
       .eq('restaurant_id', staff.restaurantId)
       .in('status', ['assigned', 'enroute'])
-      .limit(1)
-      .maybeSingle();
+      .order('placed_at', { ascending: true });
 
-    if (data) {
-      const customerInfo = Array.isArray(data.customers) ? data.customers[0] : data.customers;
-      setOrder({
-        id: data.id,
-        orderNumber: data.order_number,
-        restaurantName: staff.restaurantName,
-        customerName: customerInfo?.first_name ?? null,
-        customerPhone: customerInfo?.phone ?? null,
-        customerEmail: customerInfo?.email ?? null,
-        customerAddress: data.delivery_address?.address ?? 'Adresse à confirmer',
-        itemsSummary: 'Détails disponibles après assignation',
-        fulfillment: 'delivery',
-        paymentInfo: 'paid_online',
-        eta: deriveEta(Number(data.order_number ?? 0)),
-        distance: deriveDistance(Number(data.order_number ?? 0)),
-        status: data.status as AssignedOrder['status'],
-      });
-    } else {
-      setOrder(null);
+    if (error) {
+      console.warn(error);
+      return;
     }
+
+    const mapped =
+      data?.map((row: any) => {
+        const customerInfo = Array.isArray(row.customers) ? row.customers[0] : row.customers;
+        const orderNumber = Number(row.order_number ?? 0);
+        return {
+          id: row.id,
+          orderNumber: row.order_number,
+          restaurantName: staff.restaurantName,
+          customerName: customerInfo?.first_name ?? null,
+          customerPhone: customerInfo?.phone ?? null,
+          customerEmail: customerInfo?.email ?? null,
+          customerAddress: row.delivery_address?.address ?? 'Adresse à confirmer',
+          itemsSummary: 'Détails disponibles après assignation',
+          fulfillment: 'delivery',
+          paymentInfo: 'paid_online',
+          eta: deriveEta(orderNumber),
+          distance: deriveDistance(orderNumber),
+          status: row.status as AssignedOrder['status'],
+        } as AssignedOrder;
+      }) ?? [];
+
+    setActiveOrders(mapped);
   }, [staff.restaurantId, staff.restaurantName]);
 
   useEffect(() => {
     fetchAvailableOrders();
-    fetchActiveOrder();
+    fetchActiveOrders();
     const interval = setInterval(() => {
       fetchAvailableOrders();
-      fetchActiveOrder();
+      fetchActiveOrders();
     }, 20000);
 
     return () => clearInterval(interval);
-  }, [fetchAvailableOrders, fetchActiveOrder]);
+  }, [fetchAvailableOrders, fetchActiveOrders]);
 
   const handleAcceptOrder = async (candidate: AvailableOrder) => {
     try {
-      // Placeholder for future API call to assign order to the driver.
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'assigned' })
+        .eq('id', candidate.id);
+
+      if (error) {
+        throw error;
+      }
+
       setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
       setDeliveryTab('current');
-      fetchAvailableOrders();
       setPreviewOrder(null);
+      fetchActiveOrders();
+      fetchAvailableOrders();
     } catch (err) {
       Alert.alert(
         'Erreur',
@@ -251,10 +266,43 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
   };
 
+  const handleUpdateActiveOrderStatus = useCallback(
+    async (orderId: string, status: AssignedOrder['status']) => {
+      try {
+        const { error } = await supabase.from('orders').update({ status }).eq('id', orderId);
+        if (error) {
+          throw error;
+        }
+        fetchActiveOrders();
+        fetchAvailableOrders();
+      } catch (err) {
+        Alert.alert(
+          'Erreur',
+          err instanceof Error ? err.message : 'Impossible de mettre à jour la commande.'
+        );
+      }
+    },
+    [fetchActiveOrders, fetchAvailableOrders]
+  );
+
   const content = useMemo(() => {
     if (deliveryTab === 'current') {
-      return order ? (
-        <DeliveryCard order={order} onNavigate={openMaps} onChangeStatus={() => undefined} />
+      return activeOrders.length ? (
+        <View style={styles.availableList}>
+          {activeOrders.map((activeOrder) => (
+            <DeliveryCard
+              key={activeOrder.id}
+              order={activeOrder}
+              onNavigate={() => openMaps(activeOrder.customerAddress)}
+              onChangeStatus={(nextStatus) => handleUpdateActiveOrderStatus(activeOrder.id, nextStatus)}
+              onViewInfo={() => {
+                setPreviewOrder(activeOrder);
+                setPreviewItems([]);
+                fetchOrderItems(activeOrder.id);
+              }}
+            />
+          ))}
+        </View>
       ) : (
         <View style={styles.deliveryEmpty}>
           <Text style={styles.deliveryEmptyTitle}>Aucune livraison active</Text>
@@ -300,7 +348,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     fetchOrderItems,
     handleAcceptOrder,
     openMaps,
-    order,
+    activeOrders,
+    handleUpdateActiveOrderStatus,
     staff.restaurantName,
   ]);
 
@@ -440,6 +489,7 @@ type DeliveryCardProps = {
   onChangeStatus: (status: AssignedOrder['status']) => void;
   onClose?: () => void;
   forceStatusLabel?: string;
+  onViewInfo?: () => void;
   items?: Array<{
     id: string;
     name: string;
@@ -454,11 +504,16 @@ function DeliveryCard({
   onChangeStatus,
   onClose,
   forceStatusLabel,
+  onViewInfo,
   items,
 }: DeliveryCardProps) {
   const currentStatus =
     DELIVERY_STATUSES.find((status) => status.id === order.status) ?? { label: order.status };
   const cityLabel = getCityFromAddress(order.customerAddress);
+  const isPreview = Boolean(onClose);
+  const clientName = order.customerName ?? 'Client assigné';
+  const clientPhone = order.customerPhone ?? '—';
+  const clientEmail = order.customerEmail ?? '—';
 
   return (
     <View style={styles.availableCard}>
@@ -474,57 +529,100 @@ function DeliveryCard({
         {order.eta ? <Text style={styles.availableMeta}>ETA : {order.eta}</Text> : null}
       </View>
 
-      <View style={styles.deliveryActionButtons}>
-        {onNavigate && (
-          <TouchableOpacity style={styles.availableSecondaryButton} onPress={onNavigate}>
-            <Text style={styles.availableSecondaryButtonText}>Naviguer</Text>
-          </TouchableOpacity>
-        )}
-        {!onClose && order.status === 'assigned' && (
-          <TouchableOpacity
-            style={styles.availablePrimaryButton}
-            onPress={() => onChangeStatus('pickup')}
-          >
-            <Text style={styles.availablePrimaryButtonText}>Je pars au resto</Text>
-          </TouchableOpacity>
-        )}
-        {order.status === 'pickup' && (
-          <TouchableOpacity
-            style={styles.availablePrimaryButton}
+      {!isPreview && (
+        <>
+          {onViewInfo && (
+            <TouchableOpacity style={styles.availableSecondaryButton} onPress={onViewInfo}>
+              <Text style={styles.availableSecondaryButtonText}>Voir les informations</Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.deliveryActionButtons}>
+            {onNavigate && (
+              <TouchableOpacity style={styles.availableSecondaryButton} onPress={onNavigate}>
+                <Text style={styles.availableSecondaryButtonText}>Itinéraire</Text>
+              </TouchableOpacity>
+            )}
+            {order.status === 'assigned' && (
+              <TouchableOpacity
+                style={styles.availablePrimaryButton}
             onPress={() => onChangeStatus('enroute')}
-          >
-            <Text style={styles.availablePrimaryButtonText}>Départ vers client</Text>
-          </TouchableOpacity>
-        )}
-        {order.status === 'enroute' && (
-          <TouchableOpacity
-            style={styles.availablePrimaryButton}
-            onPress={() => onChangeStatus('completed')}
-          >
-            <Text style={styles.availablePrimaryButtonText}>Livraison terminée</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+              >
+                <Text style={styles.availablePrimaryButtonText}>La commande est récupérée</Text>
+              </TouchableOpacity>
+            )}
+            {order.status === 'pickup' && (
+              <TouchableOpacity
+                style={styles.availablePrimaryButton}
+                onPress={() => onChangeStatus('enroute')}
+              >
+                <Text style={styles.availablePrimaryButtonText}>Départ vers client</Text>
+              </TouchableOpacity>
+            )}
+            {order.status === 'enroute' && (
+              <TouchableOpacity
+                style={styles.availablePrimaryButton}
+                onPress={() => onChangeStatus('completed')}
+              >
+                <Text style={styles.availablePrimaryButtonText}>Livraison terminée</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-      {items && items.length > 0 && (order.status === 'assigned' || order.status === 'enroute') ? (
-        <View style={[styles.deliveryItemsList, { marginTop: 16 }]}>
-          {items.map((item) => (
-            <View key={item.id} style={styles.deliveryItemRow}>
-              <Text style={styles.deliveryItemTitle}>
-                {item.quantity} × {item.name}
-              </Text>
-              {item.modifiers && item.modifiers.length > 0 && (
-                <Text style={styles.deliveryItemMeta}>
-                  {item.modifiers.map((mod) => mod.option_name).join(', ')}
-                </Text>
-              )}
+          {items && items.length > 0 && (order.status === 'assigned' || order.status === 'enroute') ? (
+            <View style={[styles.deliveryItemsList, { marginTop: 16 }]}>
+              {items.map((item) => (
+                <View key={item.id} style={styles.deliveryItemRow}>
+                  <Text style={styles.deliveryItemTitle}>
+                    {item.quantity} × {item.name}
+                  </Text>
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <Text style={styles.deliveryItemMeta}>
+                      {item.modifiers.map((mod) => mod.option_name).join(', ')}
+                    </Text>
+                  )}
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-      ) : null}
+          ) : null}
 
-      {order.status !== 'assigned' && items && items.length === 0 && (
-        <Text style={styles.orderEmptyCopy}>Aucun article disponible pour cette commande.</Text>
+          {order.status !== 'assigned' && items && items.length === 0 && (
+            <Text style={styles.orderEmptyCopy}>Aucun article disponible pour cette commande.</Text>
+          )}
+        </>
+      )}
+
+      {isPreview && (
+        <>
+          <View style={styles.previewSection}>
+            <Text style={styles.previewSectionTitle}>Client</Text>
+            <Text style={styles.previewSectionValue}>{clientName}</Text>
+            <Text style={styles.previewSectionMeta}>Tél. {clientPhone}</Text>
+            <Text style={styles.previewSectionMeta}>{clientEmail}</Text>
+            <Text style={styles.previewSectionMeta}>{order.customerAddress}</Text>
+          </View>
+
+          <View style={styles.previewSection}>
+            <Text style={styles.previewSectionTitle}>Articles</Text>
+            {items && items.length > 0 ? (
+              items.map((item) => (
+                <View key={item.id} style={styles.previewItemRow}>
+                  <Text style={styles.previewItemTitle}>
+                    {item.quantity} × {item.name}
+                  </Text>
+                  {item.modifiers && item.modifiers.length > 0 ? (
+                    <Text style={styles.previewItemMeta}>
+                      {item.modifiers.map((mod) => mod.option_name).join(', ')}
+                    </Text>
+                  ) : null}
+                </View>
+              ))
+            ) : (
+              <Text style={styles.previewSectionMeta}>
+                Articles visibles une fois la commande assignée.
+              </Text>
+            )}
+          </View>
+        </>
       )}
 
       {onClose && (
@@ -684,6 +782,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
     marginBottom: 10,
+    alignSelf: 'stretch',
   },
   availableSecondaryButtonText: {
     fontWeight: '600',
@@ -694,6 +793,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.accent,
     alignItems: 'center',
+    alignSelf: 'stretch',
   },
   availablePrimaryButtonText: {
     color: '#FFFFFF',
@@ -722,9 +822,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   deliveryActionButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    flexDirection: 'column',
+    gap: 10,
     marginTop: 8,
   },
   deliveryItemsList: {
@@ -745,6 +844,39 @@ const styles = StyleSheet.create({
   deliveryItemMeta: {
     color: colors.muted,
     fontSize: 13,
+  },
+  previewSection: {
+    marginTop: 16,
+    borderRadius: 18,
+    backgroundColor: '#F9FAFB',
+    padding: 16,
+    gap: 6,
+  },
+  previewSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  previewSectionValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  previewSectionMeta: {
+    color: colors.muted,
+    fontSize: 13,
+  },
+  previewItemRow: {
+    marginTop: 8,
+    gap: 2,
+  },
+  previewItemTitle: {
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  previewItemMeta: {
+    color: colors.muted,
+    fontSize: 12,
   },
 });
 
