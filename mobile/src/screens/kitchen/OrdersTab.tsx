@@ -317,19 +317,58 @@ export function OrdersTab({
         onClose={() => setSelectedOrder(null)}
         onAccept={() => {
           if (!selectedOrder) return;
-          updateOrderStatus(selectedOrder.id, 'preparing');
-          setSelectedOrder(null);
+          Alert.alert(
+            'Accepter & préparer',
+            `Voulez-vous accepter et commencer la préparation de la commande #${selectedOrder.orderNumber ?? '—'} ?`,
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Accepter',
+                style: 'default',
+                onPress: () => {
+                  updateOrderStatus(selectedOrder.id, 'preparing');
+                  setSelectedOrder(null);
+                },
+              },
+            ]
+          );
         }}
         onMarkReady={() => {
           if (!selectedOrder) return;
-          updateOrderStatus(selectedOrder.id, 'ready');
-          setSelectedOrder(null);
+          Alert.alert(
+            'Marquer prêt',
+            `Confirmez-vous que la commande #${selectedOrder.orderNumber ?? '—'} est prête ?`,
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Confirmer',
+                style: 'default',
+                onPress: () => {
+                  updateOrderStatus(selectedOrder.id, 'ready');
+                  setSelectedOrder(null);
+                },
+              },
+            ]
+          );
         }}
         onRefuse={() => {
           if (!selectedOrder) return;
-          setReasonOrder(selectedOrder);
-          setReasonText('');
-          setSelectedOrder(null);
+          Alert.alert(
+            'Refuser la commande',
+            `Voulez-vous vraiment refuser la commande #${selectedOrder.orderNumber ?? '—'} ?`,
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Refuser',
+                style: 'destructive',
+                onPress: () => {
+                  setReasonOrder(selectedOrder);
+                  setReasonText('');
+                  setSelectedOrder(null);
+                },
+              },
+            ]
+          );
         }}
       />
 
@@ -373,8 +412,11 @@ function OrderDetailModal({
   onMarkReady,
   onRefuse,
 }: OrderDetailModalProps) {
-  const closeButtonColor =
-    isDark && activeFilter === 'ready' ? '#60A5FA' : theme.textPrimary;
+  const shouldUseBlueBackground = isDark && activeFilter === 'ready';
+  const closeButtonStyle = shouldUseBlueBackground
+    ? [styles.primaryAction, { backgroundColor: theme.pillActiveBg }]
+    : styles.secondaryAction;
+  const closeButtonTextColor = shouldUseBlueBackground ? '#FFFFFF' : theme.textPrimary;
 
   return (
     <Modal visible={Boolean(order)} transparent animationType="slide" onRequestClose={onClose}>
@@ -440,8 +482,8 @@ function OrderDetailModal({
                   <Text style={[styles.secondaryActionText, { color: colors.danger }]}>Refuser</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.secondaryAction} onPress={onClose}>
-                <Text style={[styles.secondaryActionText, { color: closeButtonColor }]}>
+              <TouchableOpacity style={closeButtonStyle} onPress={onClose}>
+                <Text style={[styles.secondaryActionText, { color: closeButtonTextColor }]}>
                   Fermer
                 </Text>
               </TouchableOpacity>

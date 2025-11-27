@@ -555,29 +555,42 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   }, [settings.gpsTracking, upsertDriverLocation]);
 
   const handleAcceptOrder = async (candidate: AvailableOrder) => {
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'assigned', driver_id: staff.staffUserId })
-        .eq('id', candidate.id);
+    Alert.alert(
+      'Accepter la commande',
+      `Voulez-vous accepter la commande #${candidate.orderNumber} ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Accepter',
+          style: 'default',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('orders')
+                .update({ status: 'assigned', driver_id: staff.staffUserId })
+                .eq('id', candidate.id);
 
-      if (error) {
-        throw error;
-      }
+              if (error) {
+                throw error;
+              }
 
-      await logOrderEvent(candidate.id, 'assigned', { driver_id: staff.staffUserId });
+              await logOrderEvent(candidate.id, 'assigned', { driver_id: staff.staffUserId });
 
-      setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
-      setDeliveryTab('current');
-      setPreviewOrder(null);
-      fetchActiveOrders();
-      fetchAvailableOrders();
-    } catch (err) {
-      Alert.alert(
-        'Erreur',
-        err instanceof Error ? err.message : 'Impossible d’accepter la commande.'
-      );
-    }
+              setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
+              setDeliveryTab('current');
+              setPreviewOrder(null);
+              fetchActiveOrders();
+              fetchAvailableOrders();
+            } catch (err) {
+              Alert.alert(
+                'Erreur',
+                err instanceof Error ? err.message : 'Impossible d’accepter la commande.'
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleUpdateActiveOrderStatus = useCallback(
@@ -604,6 +617,46 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       }
     },
     [fetchActiveOrders, fetchAvailableOrders, fetchHistoryOrders, logOrderEvent]
+  );
+
+  const handleStatusChangeWithConfirmation = useCallback(
+    (orderId: string, orderNumber: number | null, currentStatus: AssignedOrder['status'], nextStatus: AssignedOrder['status']) => {
+      let title = '';
+      let message = '';
+
+      switch (nextStatus) {
+        case 'enroute':
+          if (currentStatus === 'assigned') {
+            title = 'Confirmer la récupération';
+            message = `Confirmez-vous avoir récupéré la commande #${orderNumber ?? '—'} au restaurant ?`;
+          } else if (currentStatus === 'pickup') {
+            title = 'Départ vers le client';
+            message = `Confirmez-vous le départ vers le client pour la commande #${orderNumber ?? '—'} ?`;
+          }
+          break;
+        case 'completed':
+          title = 'Livraison terminée';
+          message = `Confirmez-vous que la livraison de la commande #${orderNumber ?? '—'} est terminée ?`;
+          break;
+        default:
+          title = 'Confirmer la modification';
+          message = `Voulez-vous vraiment modifier le statut de la commande #${orderNumber ?? '—'} ?`;
+      }
+
+      Alert.alert(
+        title,
+        message,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Confirmer',
+            style: 'default',
+            onPress: () => handleUpdateActiveOrderStatus(orderId, nextStatus),
+          },
+        ]
+      );
+    },
+    [handleUpdateActiveOrderStatus]
   );
 
   const handleConfirmFailure = useCallback(async () => {
@@ -683,7 +736,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               key={activeOrder.id}
               order={activeOrder}
               onNavigate={() => openMaps(activeOrder.customerAddress)}
-              onChangeStatus={(nextStatus) => handleUpdateActiveOrderStatus(activeOrder.id, nextStatus)}
+              onChangeStatus={(nextStatus) =>
+                handleStatusChangeWithConfirmation(
+                  activeOrder.id,
+                  activeOrder.orderNumber,
+                  activeOrder.status,
+                  nextStatus
+                )
+              }
               onViewInfo={() => {
                 setPreviewOrder(activeOrder);
                 setPreviewItems([]);
@@ -1225,7 +1285,10 @@ function DeliveryCard({
       )}
 
       {onClose && (
-        <TouchableOpacity style={styles.availableSecondaryButton} onPress={onClose}>
+        <TouchableOpacity
+          style={[styles.availableSecondaryButton, { marginTop: 24 }]}
+          onPress={onClose}
+        >
           <Text style={styles.availableSecondaryButtonText}>Fermer</Text>
         </TouchableOpacity>
       )}

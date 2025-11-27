@@ -303,7 +303,11 @@ export function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
                   ))}
                 </View>
                 <TouchableOpacity
-                  style={styles.primaryAction}
+                  style={
+                    isDark
+                      ? [styles.primaryAction, { backgroundColor: theme.pillActiveBg }]
+                      : styles.primaryAction
+                  }
                   onPress={() => {
                     setDetailVisible(false);
                     setDetail(null);

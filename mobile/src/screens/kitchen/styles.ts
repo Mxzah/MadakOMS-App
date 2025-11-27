@@ -129,6 +129,7 @@ export const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
+    paddingBottom: 40,
     maxHeight: '90%',
     gap: 12,
   },
