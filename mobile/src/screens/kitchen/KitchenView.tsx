@@ -81,7 +81,13 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
             kitchenMode={settings.kitchenMode}
           />
         ) : activeTab === 'history' ? (
-          <HistoryTab restaurantId={staff.restaurantId} theme={theme} isDark={isDark} />
+          <HistoryTab
+            restaurantId={staff.restaurantId}
+            theme={theme}
+            isDark={isDark}
+            kitchenMode={settings.kitchenMode}
+            staffUserId={staff.staffUserId}
+          />
         ) : (
           <SettingsTab
             settings={settings}

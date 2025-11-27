@@ -74,6 +74,7 @@ type HistoryEntry = {
   status: AssignedOrder['status'];
   timestamp: string;
   failureReason?: string | null;
+  driverName?: string | null;
 };
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
@@ -188,10 +189,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const [failureReason, setFailureReason] = useState('');
   const [historyOrders, setHistoryOrders] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [assignOrder, setAssignOrder] = useState<AssignedOrder | null>(null);
+  const [availableDrivers, setAvailableDrivers] = useState<Array<{ id: string; username: string }>>([]);
+  const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [settings, setSettings] = useState({
     soundEnabled: true,
     gpsTracking: true,
     theme: 'light' as 'light' | 'dark',
+    deliveryMode: 'team' as 'team' | 'individual' | 'coordinator',
   });
   const palette: Palette = settings.theme === 'dark' ? darkColors : lightColors;
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -360,7 +365,13 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   }, [availableSoundPlayer, mapAvailableOrder, settings.soundEnabled, staff.restaurantId]);
 
   const fetchActiveOrders = useCallback(async () => {
-    const { data, error } = await supabase
+    const statuses = ['assigned', 'enroute'];
+    // En mode Coordinateur, on inclut aussi les commandes 'ready' pour pouvoir les assigner
+    if (settings.deliveryMode === 'coordinator') {
+      statuses.push('ready');
+    }
+
+    const query = supabase
       .from('orders')
       .select(
         `
@@ -368,6 +379,10 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           order_number,
           delivery_address,
           status,
+          driver_id,
+          driver:staff_users!driver_id (
+            username
+          ),
           customers:customer_id (
             first_name,
             phone,
@@ -376,9 +391,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         `
       )
       .eq('restaurant_id', staff.restaurantId)
-        .eq('driver_id', staff.staffUserId)
-        .in('status', ['assigned', 'enroute'])
-      .order('placed_at', { ascending: true });
+      .in('status', statuses);
+
+    // En mode Individuel, on filtre par driver_id
+    if (settings.deliveryMode === 'individual') {
+      query.eq('driver_id', staff.staffUserId);
+    }
+
+    const { data, error } = await query.order('placed_at', { ascending: true });
 
     if (error) {
       console.warn(error);
@@ -388,6 +408,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     const mapped =
       data?.map((row: any) => {
         const customerInfo = Array.isArray(row.customers) ? row.customers[0] : row.customers;
+        const driverInfo = Array.isArray(row.driver) ? row.driver[0] : row.driver;
         const orderNumber = Number(row.order_number ?? 0);
         const destinationCoords = extractDestinationCoords(row.delivery_address);
         const fallbackDistance = deriveDistance(orderNumber);
@@ -407,11 +428,13 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           eta: computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
           distance: computeDistanceLabel(driverLocation, destinationCoords, fallbackDistance),
           status: row.status as AssignedOrder['status'],
+          driverId: row.driver_id ?? null,
+          driverName: driverInfo?.username ?? null,
         } as AssignedOrder;
       }) ?? [];
 
     setActiveOrders(mapped);
-  }, [driverLocation, staff.restaurantId, staff.restaurantName, staff.staffUserId]);
+  }, [driverLocation, staff.restaurantId, staff.restaurantName, staff.staffUserId, settings.deliveryMode]);
 
   useEffect(() => {
     fetchAvailableOrders();
@@ -465,7 +488,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const fetchHistoryOrders = useCallback(async () => {
     try {
       setHistoryLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('orders')
         .select(
           `
@@ -475,37 +498,52 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           updated_at,
           completed_at,
           cancelled_at,
-          failure_reason
+          failure_reason,
+          driver_id,
+          driver:staff_users!driver_id (
+            username
+          )
         `
         )
         .eq('restaurant_id', staff.restaurantId)
-        .eq('driver_id', staff.staffUserId)
         .in('status', ['completed', 'cancelled', 'failed'])
         .order('updated_at', { ascending: false });
+
+      // En mode "Individuel", on filtre par driver_id
+      // En mode "Équipe" ou "Coordinateur", on affiche toutes les commandes terminées du restaurant
+      if (settings.deliveryMode === 'individual') {
+        query = query.eq('driver_id', staff.staffUserId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         throw error;
       }
 
       const mapped: HistoryEntry[] =
-        data?.map((row: any) => ({
-          id: row.id,
-          orderNumber: row.order_number ?? null,
-          status: row.status as AssignedOrder['status'],
-          timestamp: row.completed_at ?? row.cancelled_at ?? row.updated_at,
-          failureReason: row.failure_reason ?? null,
-        })) ?? [];
+        data?.map((row: any) => {
+          const driverInfo = Array.isArray(row.driver) ? row.driver[0] : row.driver;
+          return {
+            id: row.id,
+            orderNumber: row.order_number ?? null,
+            status: row.status as AssignedOrder['status'],
+            timestamp: row.completed_at ?? row.cancelled_at ?? row.updated_at,
+            failureReason: row.failure_reason ?? null,
+            driverName: driverInfo?.username ?? null,
+          };
+        }) ?? [];
 
       setHistoryOrders(mapped);
     } catch (err) {
       Alert.alert(
         'Erreur',
-        err instanceof Error ? err.message : 'Impossible de charger l’historique.'
+        err instanceof Error ? err.message : 'Impossible de charger l\'historique.'
       );
     } finally {
       setHistoryLoading(false);
     }
-  }, [staff.restaurantId]);
+  }, [staff.restaurantId, staff.staffUserId, settings.deliveryMode]);
 
   useEffect(() => {
     fetchHistoryOrders();
@@ -617,6 +655,59 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       }
     },
     [fetchActiveOrders, fetchAvailableOrders, fetchHistoryOrders, logOrderEvent]
+  );
+
+  const fetchAvailableDrivers = useCallback(async () => {
+    setLoadingDrivers(true);
+    try {
+      const { data, error } = await supabase
+        .from('staff_users')
+        .select('id, username')
+        .eq('restaurant_id', staff.restaurantId)
+        .eq('role', 'delivery')
+        .eq('is_active', true)
+        .order('username', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      setAvailableDrivers(data ?? []);
+    } catch (err) {
+      Alert.alert('Erreur', 'Impossible de charger la liste des livreurs.');
+    } finally {
+      setLoadingDrivers(false);
+    }
+  }, [staff.restaurantId]);
+
+  const assignOrderToDriver = useCallback(
+    async (orderId: string, driverId: string) => {
+      const payload = { status: 'assigned', driver_id: driverId };
+
+      const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
+      if (error) {
+        Alert.alert('Erreur', 'Échec de l\'assignation.');
+        return;
+      }
+
+      const eventPayload = { status: 'assigned', driver_id: driverId };
+
+      const { error: eventError } = await supabase.from('order_events').insert({
+        order_id: orderId,
+        actor_type: 'coordinator',
+        event_type: 'status_changed',
+        payload: eventPayload,
+      });
+
+      if (eventError) {
+        console.warn('Impossible d\'enregistrer le journal des événements', eventError);
+      }
+
+      fetchActiveOrders();
+      fetchAvailableOrders();
+      setAssignOrder(null);
+    },
+    [fetchActiveOrders, fetchAvailableOrders]
   );
 
   const handleStatusChangeWithConfirmation = useCallback(
@@ -735,6 +826,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
             <DeliveryCard
               key={activeOrder.id}
               order={activeOrder}
+              deliveryMode={settings.deliveryMode}
               onNavigate={() => openMaps(activeOrder.customerAddress)}
               onChangeStatus={(nextStatus) =>
                 handleStatusChangeWithConfirmation(
@@ -752,6 +844,10 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               onReportFailure={(orderToFail) => {
                 setFailureOrder(orderToFail);
                 setFailureReason('');
+              }}
+              onAssign={() => {
+                setAssignOrder(activeOrder);
+                fetchAvailableDrivers();
               }}
               palette={palette}
               styles={styles}
@@ -776,7 +872,25 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         <AvailableOrdersList
           orders={availableOrders}
           loading={availableLoading}
+          deliveryMode={settings.deliveryMode}
           onAccept={handleAcceptOrder}
+          onAssign={(candidate) => {
+            setAssignOrder({
+              id: candidate.id,
+              orderNumber: candidate.orderNumber,
+              restaurantName: staff.restaurantName,
+              customerName: candidate.customerName ?? null,
+              customerPhone: candidate.customerPhone ?? null,
+              customerEmail: candidate.customerEmail ?? null,
+              customerAddress: candidate.address,
+              itemsSummary: candidate.itemsSummary ?? 'Détails disponibles après assignation',
+              fulfillment: 'delivery',
+              paymentInfo: 'paid_online',
+              eta: candidate.eta,
+              status: candidate.status ?? 'ready',
+            });
+            fetchAvailableDrivers();
+          }}
           onPreview={(candidate) => {
             setPreviewOrder({
               id: candidate.id,
@@ -801,8 +915,76 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
 
     if (deliveryTab === 'settings') {
+      const DELIVERY_MODES = [
+        {
+          id: 'team',
+          label: 'Équipe',
+          description:
+            'Dans "Livraisons actives", vous voyez toutes les livraisons avec le nom du livreur en haut à droite.',
+        },
+        {
+          id: 'individual',
+          label: 'Individuel',
+          description: 'Dans "Livraisons actives", vous voyez seulement les livraisons qui vous sont assignées.',
+        },
+        {
+          id: 'coordinator',
+          label: 'Coordinateur',
+          description:
+            'Dans "Livraisons actives", vous voyez toutes les livraisons avec le nom du livreur et pouvez assigner les commandes aux livreurs.',
+        },
+      ] as const;
+
       return (
         <View style={styles.settingsList}>
+          <View style={styles.settingCard}>
+            <Text style={styles.settingTitle}>Mode de livraison</Text>
+            <Text style={[styles.settingSubtitle, { marginBottom: 16 }]}>
+              Choisissez votre mode de travail
+            </Text>
+            <View style={styles.modeSelector}>
+              {DELIVERY_MODES.map((mode) => {
+                const isActive = settings.deliveryMode === mode.id;
+                return (
+                  <TouchableOpacity
+                    key={mode.id}
+                    style={[
+                      styles.modeOption,
+                      {
+                        backgroundColor: isActive ? palette.accent : palette.surface,
+                        borderColor: isActive ? palette.accent : palette.border,
+                      },
+                    ]}
+                    onPress={() =>
+                      setSettings((prev) => ({ ...prev, deliveryMode: mode.id as any }))
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.modeOptionLabel,
+                        {
+                          color: isActive ? '#FFFFFF' : palette.dark,
+                        },
+                      ]}
+                    >
+                      {mode.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.modeOptionDescription,
+                        {
+                          color: isActive ? '#FFFFFF' : palette.muted,
+                        },
+                      ]}
+                    >
+                      {mode.description}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
           <View style={styles.settingCard}>
             <View style={styles.settingRow}>
               <View style={styles.settingText}>
@@ -906,7 +1088,15 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
                     </Text>
                   </View>
                 </View>
-                <Text style={styles.historyMeta}>{formatDateTime(entry.timestamp)}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                  <Text style={styles.historyMeta}>{formatDateTime(entry.timestamp)}</Text>
+                  {(settings.deliveryMode === 'team' || settings.deliveryMode === 'coordinator') &&
+                    entry.driverName && (
+                      <Text style={[styles.historyMeta, { fontStyle: 'italic', textAlign: 'right' }]}>
+                        Livré par : {entry.driverName}
+                      </Text>
+                    )}
+                </View>
                 {entry.status === 'failed' && entry.failureReason ? (
                   <Text style={styles.historyFailure}>Motif: {entry.failureReason}</Text>
                 ) : null}
@@ -935,6 +1125,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     openHistoryDetail,
     openMaps,
     onLogout,
+    settings.deliveryMode,
     settings.gpsTracking,
     settings.soundEnabled,
     staff.restaurantName,
@@ -1026,6 +1217,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               previewOrder && (
                 <DeliveryCard
                   order={previewOrder}
+                  deliveryMode={settings.deliveryMode}
                   onClose={() => setPreviewOrder(null)}
                   items={previewItems}
                   forceStatusLabel="Prête"
@@ -1050,6 +1242,30 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         onConfirm={handleConfirmFailure}
         styles={styles}
       />
+
+      <AssignDriverModal
+        order={assignOrder}
+        drivers={availableDrivers}
+        loading={loadingDrivers}
+        palette={palette}
+        styles={styles}
+        onCancel={() => setAssignOrder(null)}
+        onSelect={(driverId, driverName) => {
+          if (!assignOrder) return;
+          Alert.alert(
+            'Assigner la commande',
+            `Voulez-vous assigner la commande #${assignOrder.orderNumber ?? '—'} à ${driverName} ?`,
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Confirmer',
+                style: 'default',
+                onPress: () => assignOrderToDriver(assignOrder.id, driverId),
+              },
+            ]
+          );
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1057,13 +1273,17 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
 function AvailableOrdersList({
   orders,
   loading,
+  deliveryMode,
   onAccept,
+  onAssign,
   onPreview,
   styles,
 }: {
   orders: AvailableOrder[];
   loading: boolean;
+  deliveryMode: 'team' | 'individual' | 'coordinator';
   onAccept: (order: AvailableOrder) => void;
+  onAssign?: (order: AvailableOrder) => void;
   onPreview: (order: AvailableOrder) => void;
   styles: DeliveryStyles;
 }) {
@@ -1103,9 +1323,18 @@ function AvailableOrdersList({
           <TouchableOpacity style={styles.availableSecondaryButton} onPress={() => onPreview(order)}>
             <Text style={styles.availableSecondaryButtonText}>Voir les informations</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.availablePrimaryButton} onPress={() => onAccept(order)}>
-            <Text style={styles.availablePrimaryButtonText}>Accepter la commande</Text>
-          </TouchableOpacity>
+          {deliveryMode === 'coordinator' && onAssign ? (
+            <TouchableOpacity
+              style={[styles.availablePrimaryButton, { backgroundColor: basePalette.accent }]}
+              onPress={() => onAssign(order)}
+            >
+              <Text style={styles.availablePrimaryButtonText}>Assigner à un livreur</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.availablePrimaryButton} onPress={() => onAccept(order)}>
+              <Text style={styles.availablePrimaryButtonText}>Accepter la commande</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ))}
     </View>
@@ -1114,12 +1343,14 @@ function AvailableOrdersList({
 
 type DeliveryCardProps = {
   order: AssignedOrder;
+  deliveryMode: 'team' | 'individual' | 'coordinator';
   onNavigate?: () => void;
   onChangeStatus: (status: AssignedOrder['status']) => void;
   onClose?: () => void;
   forceStatusLabel?: string;
   onViewInfo?: () => void;
   onReportFailure?: (order: AssignedOrder) => void;
+  onAssign?: () => void;
   items?: Array<{
     id: string;
     name: string;
@@ -1132,12 +1363,14 @@ type DeliveryCardProps = {
 
 function DeliveryCard({
   order,
+  deliveryMode,
   onNavigate,
   onChangeStatus,
   onClose,
   forceStatusLabel,
   onViewInfo,
   onReportFailure,
+  onAssign,
   items,
   palette,
   styles,
@@ -1150,11 +1383,17 @@ function DeliveryCard({
   const clientPhone = order.customerPhone ?? '—';
   const clientEmail = order.customerEmail ?? '—';
 
+  // En mode Équipe ou Coordinateur, afficher le nom du livreur au lieu de la ville
+  const headerRightLabel =
+    (deliveryMode === 'team' || deliveryMode === 'coordinator') && order.driverName
+      ? `Prise en charge par : ${order.driverName}`
+      : cityLabel || forceStatusLabel || currentStatus.label;
+
   return (
     <View style={styles.availableCard}>
       <View style={styles.availableCardHeader}>
         <Text style={styles.availableOrderNumber}>Commande #{order.orderNumber ?? '—'}</Text>
-        <Text style={styles.availableCity}>{cityLabel || forceStatusLabel || currentStatus.label}</Text>
+        <Text style={styles.availableCity}>{headerRightLabel}</Text>
       </View>
       <Text style={styles.availableAddress}>{order.customerAddress}</Text>
       <View style={styles.availableMetaRow}>
@@ -1175,6 +1414,14 @@ function DeliveryCard({
             {onNavigate && (
               <TouchableOpacity style={styles.availableSecondaryButton} onPress={onNavigate}>
                 <Text style={styles.availableSecondaryButtonText}>Itinéraire</Text>
+              </TouchableOpacity>
+            )}
+            {deliveryMode === 'coordinator' && (order.status === 'ready' || !order.driverId) && onAssign && (
+              <TouchableOpacity
+                style={[styles.availablePrimaryButton, { backgroundColor: palette.accent }]}
+                onPress={onAssign}
+              >
+                <Text style={styles.availablePrimaryButtonText}>Assigner à un livreur</Text>
               </TouchableOpacity>
             )}
             {order.status === 'assigned' && (
@@ -1617,6 +1864,23 @@ function createStyles(palette: Palette) {
   settingSubtitle: {
     color: colors.muted,
   },
+  modeSelector: {
+    gap: 12,
+  },
+  modeOption: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+  },
+  modeOptionLabel: {
+    fontWeight: '700',
+    fontSize: 16,
+    marginBottom: 6,
+  },
+  modeOptionDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
   logoutButton: {
     backgroundColor: '#1F2937',
     paddingVertical: 14,
@@ -1719,7 +1983,7 @@ function FailureReasonModal({
           style={styles.failureWrapper}
         >
           <Pressable style={styles.failureModalCard} onPress={(event) => event.stopPropagation()}>
-            <Text style={styles.failureTitle}>Impossible d’effectuer la livraison</Text>
+            <Text style={styles.failureTitle}>Impossible d'effectuer la livraison</Text>
             <TextInput
               value={reason}
               onChangeText={onChangeReason}
@@ -1738,6 +2002,79 @@ function FailureReasonModal({
             </View>
           </Pressable>
         </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+}
+
+type AssignDriverModalProps = {
+  order: AssignedOrder | null;
+  drivers: Array<{ id: string; username: string }>;
+  loading: boolean;
+  palette: Palette;
+  styles: DeliveryStyles;
+  onCancel: () => void;
+  onSelect: (driverId: string, driverName: string) => void;
+};
+
+function AssignDriverModal({
+  order,
+  drivers,
+  loading,
+  palette,
+  styles,
+  onCancel,
+  onSelect,
+}: AssignDriverModalProps) {
+  return (
+    <Modal visible={Boolean(order)} transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={styles.modalBackdrop} onPress={onCancel}>
+        <Pressable
+          style={[styles.failureModalCard, { backgroundColor: palette.surface }]}
+          onPress={(event) => event.stopPropagation()}
+        >
+          <Text style={[styles.failureTitle, { color: palette.dark }]}>
+            Assigner la commande #{order?.orderNumber ?? '—'}
+          </Text>
+          <Text style={[styles.settingSubtitle, { color: palette.muted, marginBottom: 16 }]}>
+            Sélectionnez un livreur
+          </Text>
+          {loading ? (
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 20 }}>
+              <ActivityIndicator color={palette.accent} />
+            </View>
+          ) : drivers.length === 0 ? (
+            <Text style={[styles.settingSubtitle, { color: palette.muted }]}>
+              Aucun livreur disponible
+            </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 300 }}>
+              {drivers.map((driver) => (
+                <TouchableOpacity
+                  key={driver.id}
+                  style={[
+                    styles.modeOption,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                      marginBottom: 10,
+                    },
+                  ]}
+                  onPress={() => onSelect(driver.id, driver.username)}
+                >
+                  <Text style={[styles.modeOptionLabel, { color: palette.dark }]}>
+                    {driver.username}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+          <View style={styles.modalActionsRow}>
+            <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+              <Text style={styles.cancelButtonText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );

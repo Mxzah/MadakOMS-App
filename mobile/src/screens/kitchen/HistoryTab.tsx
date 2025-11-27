@@ -31,9 +31,17 @@ type HistoryTabProps = {
   restaurantId: string;
   theme: KitchenTheme;
   isDark: boolean;
+  kitchenMode: 'team' | 'individual' | 'chef';
+  staffUserId: string;
 };
 
-export function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
+export function HistoryTab({
+  restaurantId,
+  theme,
+  isDark,
+  kitchenMode,
+  staffUserId,
+}: HistoryTabProps) {
   const [history, setHistory] = useState<HistoryOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,7 +52,7 @@ export function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
   const [detail, setDetail] = useState<KitchenOrder | null>(null);
 
   const fetchHistory = useCallback(async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('orders')
       .select(
         `
@@ -54,33 +62,50 @@ export function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
           fulfillment,
           updated_at,
           completed_at,
-          cancelled_at
+          cancelled_at,
+          cook_id,
+          cook:staff_users!cook_id (
+            username
+          )
         `
       )
       .eq('restaurant_id', restaurantId)
-      .in('status', ['completed', 'cancelled'])
+      .in('status', ['ready', 'cancelled'])
       .order('updated_at', { ascending: false });
 
+    // En mode "Individuel", on filtre par cook_id
+    if (kitchenMode === 'individual') {
+      query = query.eq('cook_id', staffUserId);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
-      Alert.alert('Erreur', 'Impossible de charger l’historique.');
+      Alert.alert('Erreur', 'Impossible de charger l\'historique.');
       return;
     }
 
     const mapped: HistoryOrder[] =
-      data?.map((row: any) => ({
-        id: row.id,
-        orderNumber: row.order_number ?? null,
-        status: row.status,
-        fulfillment: row.fulfillment,
-        updatedAt: row.updated_at,
-        completedAt: row.completed_at,
-        cancelledAt: row.cancelled_at,
-        placedAt: row.updated_at,
-      })) ?? [];
+      data
+        ?.filter((row: any) => row.status === 'ready' || row.status === 'cancelled')
+        .map((row: any) => {
+          const cookInfo = Array.isArray(row.cook) ? row.cook[0] : row.cook;
+          return {
+            id: row.id,
+            orderNumber: row.order_number ?? null,
+            status: row.status,
+            fulfillment: row.fulfillment,
+            updatedAt: row.updated_at,
+            completedAt: row.completed_at,
+            cancelledAt: row.cancelled_at,
+            placedAt: row.updated_at,
+            cookName: cookInfo?.username ?? null,
+          };
+        }) ?? [];
 
     setHistory(mapped);
     setLoading(false);
-  }, [restaurantId]);
+  }, [restaurantId, kitchenMode, staffUserId]);
 
   useEffect(() => {
     fetchHistory();
@@ -217,13 +242,25 @@ export function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
                   </Text>
                   <View style={[styles.historyBadge, { backgroundColor: badge.backgroundColor }]}>
                     <Text style={[styles.historyBadgeText, { color: badge.color }]}>
-                      {item.status === 'completed' ? 'Terminée' : 'Annulée'}
+                      {item.status === 'ready' ? 'Terminée' : 'Annulée'}
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.historyMeta, { color: theme.textSecondary }]}>
-                  {historySubtitle(item)}
-                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                  <Text style={[styles.historyMeta, { color: theme.textSecondary }]}>
+                    {historySubtitle(item)}
+                  </Text>
+                  {(kitchenMode === 'team' || kitchenMode === 'chef') && item.cookName && (
+                    <Text
+                      style={[
+                        styles.historyMeta,
+                        { color: theme.textSecondary, fontStyle: 'italic', textAlign: 'right' },
+                      ]}
+                    >
+                      Préparé par : {item.cookName}
+                    </Text>
+                  )}
+                </View>
               </TouchableOpacity>
             );
           }}
@@ -267,7 +304,7 @@ export function HistoryTab({ restaurantId, theme, isDark }: HistoryTabProps) {
                   Commande #{detail.orderNumber ?? '—'}
                 </Text>
                 <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
-                  {detail.status === 'completed' ? 'Terminée' : 'Annulée'}
+                  {detail.status === 'ready' ? 'Terminée' : 'Annulée'}
                 </Text>
                 <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                   <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>

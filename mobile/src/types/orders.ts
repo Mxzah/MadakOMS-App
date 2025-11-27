@@ -13,6 +13,7 @@ export type AssignedOrder = {
   distance?: string;
   status: 'assigned' | 'ready' | 'pickup' | 'enroute' | 'completed' | 'failed' | 'cancelled';
   driverId?: string | null;
+  driverName?: string | null;
 };
 
 export type AvailableOrder = {
@@ -67,5 +68,6 @@ export type HistoryOrder = {
   completedAt: string | null;
   cancelledAt: string | null;
   placedAt: string;
+  cookName?: string | null;
 };
 
