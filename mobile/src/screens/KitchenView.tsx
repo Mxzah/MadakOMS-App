@@ -151,6 +151,7 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
             theme={theme}
             isDark={isDark}
             notificationsEnabled={settings.soundEnabled}
+            staffRole={staff.role}
           />
         ) : activeTab === 'history' ? (
           <HistoryTab restaurantId={staff.restaurantId} theme={theme} isDark={isDark} />
@@ -172,9 +173,16 @@ type OrdersTabProps = {
   theme: KitchenTheme;
   isDark: boolean;
   notificationsEnabled: boolean;
+  staffRole: string;
 };
 
-function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: OrdersTabProps) {
+function OrdersTab({
+  restaurantId,
+  theme,
+  isDark,
+  notificationsEnabled,
+  staffRole,
+}: OrdersTabProps) {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -187,21 +195,25 @@ function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: Orders
   const notificationPlayer = useAudioPlayer(NOTIFICATION_SOUND_URL, { downloadFirst: true });
 
   const fetchOrders = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(ORDER_DETAIL_SELECT)
-      .eq('restaurant_id', restaurantId)
-      .in('status', ['received', 'preparing', 'ready'])
-      .order('placed_at', { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(ORDER_DETAIL_SELECT)
+        .eq('restaurant_id', restaurantId)
+        .in('status', ['received', 'preparing', 'ready'])
+        .order('placed_at', { ascending: true });
 
-    if (error) {
-      Alert.alert('Erreur', 'Impossible de récupérer les commandes.');
-      return;
+      if (error) {
+        Alert.alert('Erreur', 'Impossible de récupérer les commandes.');
+        return;
+      }
+
+      setOrders(data?.map(mapOrderRowToKitchenOrder) ?? []);
+    } finally {
+      setLoading(false);
     }
-
-    setOrders(data?.map(mapOrderRowToKitchenOrder) ?? []);
-    setLoading(false);
   }, [restaurantId]);
+
 
   const playNotification = useCallback(async () => {
     try {
@@ -232,7 +244,9 @@ function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: Orders
   }, [fetchOrders]);
 
   useEffect(() => {
-    const receivedOrders = orders.filter((order) => order.status === 'received');
+    const receivedOrders = orders.filter(
+      (order) => order.status === 'received' && order.fulfillment === 'delivery'
+    );
     const nextIds = new Set(receivedOrders.map((order) => order.id));
 
     if (hasMountedRef.current) {
@@ -299,10 +313,31 @@ function OrdersTab({ restaurantId, theme, isDark, notificationsEnabled }: Orders
       Alert.alert('Erreur', 'Échec de la mise à jour.');
       return;
     }
+
+    const eventPayload: Record<string, any> = { status };
+    if (cancellationReason) {
+      eventPayload.cancellation_reason = cancellationReason;
+    }
+
+    const { error: eventError } = await supabase.from('order_events').insert({
+      order_id: orderId,
+      actor_type: staffRole || 'cook',
+      event_type: 'status_changed',
+      payload: eventPayload,
+    });
+
+    if (eventError) {
+      console.warn('Impossible d’enregistrer le journal des événements', eventError);
+    }
+
     fetchOrders();
   };
 
-  const filteredOrders = orders.filter((order) => order.status === selectedFilter);
+  const filteredOrders = orders.filter((order) => {
+    const statusMatch = order.status === selectedFilter;
+    const deliveryOnly = selectedFilter !== 'received' || order.fulfillment === 'delivery';
+    return statusMatch && deliveryOnly;
+  });
 
   return (
     <View style={styles.flex}>

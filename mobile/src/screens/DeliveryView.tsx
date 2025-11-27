@@ -197,6 +197,26 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const styles = useMemo(() => createStyles(palette), [palette]);
   const availableIdsRef = useRef<Set<string>>(new Set());
   const availableSoundPlayer = useAudioPlayer(NEW_ORDER_SOUND_URL, { downloadFirst: true });
+  const logOrderEvent = useCallback(
+    async (orderId: string, status: string, extraPayload?: Record<string, any>) => {
+      try {
+        const payload = { status, ...(extraPayload ?? {}) };
+        const { error } = await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_type: 'delivery',
+          actor_id: staff.staffUserId,
+          event_type: 'status_changed',
+          payload,
+        });
+        if (error) {
+          console.warn('Impossible d’enregistrer le journal des événements', error);
+        }
+      } catch (err) {
+        console.warn('Erreur lors de la création de order_event', err);
+      }
+    },
+    [staff.staffUserId]
+  );
 
   const openMaps = useCallback((address: string) => {
     if (!address) {
@@ -545,6 +565,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         throw error;
       }
 
+      await logOrderEvent(candidate.id, 'assigned', { driver_id: staff.staffUserId });
+
       setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
       setDeliveryTab('current');
       setPreviewOrder(null);
@@ -570,6 +592,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         if (error) {
           throw error;
         }
+        await logOrderEvent(orderId, status, extraFields);
         fetchActiveOrders();
         fetchAvailableOrders();
         fetchHistoryOrders();
@@ -580,7 +603,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         );
       }
     },
-    [fetchActiveOrders, fetchAvailableOrders, fetchHistoryOrders]
+    [fetchActiveOrders, fetchAvailableOrders, fetchHistoryOrders, logOrderEvent]
   );
 
   const handleConfirmFailure = useCallback(async () => {
