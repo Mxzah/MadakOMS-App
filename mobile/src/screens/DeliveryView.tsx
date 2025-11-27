@@ -488,51 +488,80 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const fetchHistoryOrders = useCallback(async () => {
     try {
       setHistoryLoading(true);
-      let query = supabase
-        .from('orders')
+      // Récupérer les événements de changement de statut vers 'completed', 'cancelled' ou 'failed'
+      const { data: eventsData, error: eventsError } = await supabase
+        .from('order_events')
         .select(
           `
           id,
-          order_number,
-          status,
-          updated_at,
-          completed_at,
-          cancelled_at,
-          failure_reason,
-          driver_id,
-          driver:staff_users!driver_id (
-            username
+          order_id,
+          created_at,
+          payload,
+          orders!inner (
+            id,
+            order_number,
+            restaurant_id,
+            updated_at,
+            completed_at,
+            cancelled_at,
+            failure_reason,
+            driver_id,
+            driver:staff_users!driver_id (
+              username
+            )
           )
         `
         )
-        .eq('restaurant_id', staff.restaurantId)
-        .in('status', ['completed', 'cancelled', 'failed'])
-        .order('updated_at', { ascending: false });
+        .eq('event_type', 'status_changed')
+        .order('created_at', { ascending: false });
 
-      // En mode "Individuel", on filtre par driver_id
-      // En mode "Équipe" ou "Coordinateur", on affiche toutes les commandes terminées du restaurant
-      if (settings.deliveryMode === 'individual') {
-        query = query.eq('driver_id', staff.staffUserId);
+      if (eventsError) {
+        throw eventsError;
       }
 
-      const { data, error } = await query;
+      // Filtrer par restaurant_id et gérer les doublons (prendre le dernier événement pour chaque commande)
+      const orderMap = new Map<string, any>();
 
-      if (error) {
-        throw error;
-      }
+      eventsData?.forEach((event: any) => {
+        const order = Array.isArray(event.orders) ? event.orders[0] : event.orders;
+        if (!order || order.restaurant_id !== staff.restaurantId) return;
 
-      const mapped: HistoryEntry[] =
-        data?.map((row: any) => {
-          const driverInfo = Array.isArray(row.driver) ? row.driver[0] : row.driver;
-          return {
-            id: row.id,
-            orderNumber: row.order_number ?? null,
-            status: row.status as AssignedOrder['status'],
-            timestamp: row.completed_at ?? row.cancelled_at ?? row.updated_at,
-            failureReason: row.failure_reason ?? null,
+        const payload = event.payload || {};
+        const status = payload.status;
+
+        // Filtrer uniquement les événements avec status 'completed', 'cancelled' ou 'failed'
+        if (status !== 'completed' && status !== 'cancelled' && status !== 'failed') return;
+
+        // En mode "Individuel", on filtre par driver_id
+        if (settings.deliveryMode === 'individual' && order.driver_id !== staff.staffUserId) return;
+
+        const orderId = order.id;
+
+        // Si on n'a pas encore cette commande, ou si cet événement est plus récent, on le garde
+        if (!orderMap.has(orderId) || new Date(event.created_at) > new Date(orderMap.get(orderId).eventCreatedAt)) {
+          const driverInfo = Array.isArray(order.driver) ? order.driver[0] : order.driver;
+          orderMap.set(orderId, {
+            id: order.id,
+            orderNumber: order.order_number ?? null,
+            status: status as AssignedOrder['status'],
+            timestamp: order.completed_at ?? order.cancelled_at ?? order.updated_at,
+            failureReason: order.failure_reason ?? payload.failure_reason ?? null,
             driverName: driverInfo?.username ?? null,
+            eventCreatedAt: event.created_at,
+          });
+        }
+      });
+
+      const mapped: HistoryEntry[] = Array.from(orderMap.values())
+        .map((item) => {
+          // Utiliser eventCreatedAt comme timestamp pour le tri et l'affichage
+          const { eventCreatedAt, ...rest } = item;
+          return {
+            ...rest,
+            timestamp: eventCreatedAt,
           };
-        }) ?? [];
+        })
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
       setHistoryOrders(mapped);
     } catch (err) {

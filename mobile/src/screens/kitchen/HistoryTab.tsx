@@ -52,56 +52,84 @@ export function HistoryTab({
   const [detail, setDetail] = useState<KitchenOrder | null>(null);
 
   const fetchHistory = useCallback(async () => {
-    let query = supabase
-      .from('orders')
+    // Récupérer les événements de changement de statut vers 'ready' ou 'cancelled'
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('order_events')
       .select(
         `
           id,
-          order_number,
-          status,
-          fulfillment,
-          updated_at,
-          completed_at,
-          cancelled_at,
-          cook_id,
-          cook:staff_users!cook_id (
-            username
+          order_id,
+          created_at,
+          payload,
+          orders!inner (
+            id,
+            order_number,
+            restaurant_id,
+            fulfillment,
+            updated_at,
+            completed_at,
+            cancelled_at,
+            cook_id,
+            cook:staff_users!cook_id (
+              username
+            )
           )
         `
       )
-      .eq('restaurant_id', restaurantId)
-      .in('status', ['ready', 'cancelled'])
-      .order('updated_at', { ascending: false });
+      .eq('event_type', 'status_changed')
+      .order('created_at', { ascending: false });
 
-    // En mode "Individuel", on filtre par cook_id
-    if (kitchenMode === 'individual') {
-      query = query.eq('cook_id', staffUserId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
+    if (eventsError) {
       Alert.alert('Erreur', 'Impossible de charger l\'historique.');
       return;
     }
 
-    const mapped: HistoryOrder[] =
-      data
-        ?.filter((row: any) => row.status === 'ready' || row.status === 'cancelled')
-        .map((row: any) => {
-          const cookInfo = Array.isArray(row.cook) ? row.cook[0] : row.cook;
-          return {
-            id: row.id,
-            orderNumber: row.order_number ?? null,
-            status: row.status,
-            fulfillment: row.fulfillment,
-            updatedAt: row.updated_at,
-            completedAt: row.completed_at,
-            cancelledAt: row.cancelled_at,
-            placedAt: row.updated_at,
-            cookName: cookInfo?.username ?? null,
-          };
-        }) ?? [];
+    // Filtrer par restaurant_id et gérer les doublons (prendre le dernier événement pour chaque commande)
+    const orderMap = new Map<string, any>();
+
+    eventsData?.forEach((event: any) => {
+      const order = Array.isArray(event.orders) ? event.orders[0] : event.orders;
+      if (!order || order.restaurant_id !== restaurantId) return;
+
+      const payload = event.payload || {};
+      const status = payload.status;
+
+      // Filtrer uniquement les événements avec status 'ready' ou 'cancelled'
+      if (status !== 'ready' && status !== 'cancelled') return;
+
+      // En mode "Individuel", on filtre par cook_id
+      if (kitchenMode === 'individual' && order.cook_id !== staffUserId) return;
+
+      const orderId = order.id;
+
+      // Si on n'a pas encore cette commande, ou si cet événement est plus récent, on le garde
+      if (!orderMap.has(orderId) || new Date(event.created_at) > new Date(orderMap.get(orderId).eventCreatedAt)) {
+        const cookInfo = Array.isArray(order.cook) ? order.cook[0] : order.cook;
+        orderMap.set(orderId, {
+          id: order.id,
+          orderNumber: order.order_number ?? null,
+          status: status,
+          fulfillment: order.fulfillment,
+          updatedAt: order.updated_at,
+          completedAt: order.completed_at,
+          cancelledAt: order.cancelled_at,
+          placedAt: order.updated_at,
+          cookName: cookInfo?.username ?? null,
+          eventCreatedAt: event.created_at,
+        });
+      }
+    });
+
+    const mapped: HistoryOrder[] = Array.from(orderMap.values())
+      .map((item) => {
+        // Utiliser eventCreatedAt comme updatedAt pour le tri et l'affichage
+        const { eventCreatedAt, ...rest } = item;
+        return {
+          ...rest,
+          updatedAt: eventCreatedAt,
+        };
+      })
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
     setHistory(mapped);
     setLoading(false);
