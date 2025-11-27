@@ -13,6 +13,7 @@ type KitchenViewProps = {
     restaurantId: string;
     restaurantName: string;
     role: string;
+    staffUserId: string;
   };
   onLogout: () => void;
 };
@@ -22,6 +23,7 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
   const [settings, setSettings] = useState<SettingsState>({
     soundEnabled: true,
     theme: 'light',
+    kitchenMode: 'team',
   });
 
   const theme = kitchenThemes[settings.theme];
@@ -75,6 +77,8 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
             isDark={isDark}
             notificationsEnabled={settings.soundEnabled}
             staffRole={staff.role}
+            staffUserId={staff.staffUserId}
+            kitchenMode={settings.kitchenMode}
           />
         ) : activeTab === 'history' ? (
           <HistoryTab restaurantId={staff.restaurantId} theme={theme} isDark={isDark} />

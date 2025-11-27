@@ -12,5 +12,6 @@ export type KitchenTheme = {
 export type SettingsState = {
   soundEnabled: boolean;
   theme: 'light' | 'dark';
+  kitchenMode: 'team' | 'individual' | 'chef';
 };
 

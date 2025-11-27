@@ -10,6 +10,10 @@ export const ORDER_DETAIL_SELECT = `
   pickup_name,
   pickup_phone,
   delivery_address,
+  cook_id,
+  cook:staff_users!cook_id (
+    username
+  ),
   customers:customer_id (
     first_name,
     phone,
@@ -96,6 +100,7 @@ export const getCustomerPhone = (order: KitchenOrder) => {
 
 export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
   const customerRaw = Array.isArray(row.customers) ? row.customers[0] : row.customers;
+  const cookRaw = Array.isArray(row.cook) ? row.cook[0] : row.cook;
   return {
     id: row.id,
     orderNumber: row.order_number ?? null,
@@ -106,6 +111,8 @@ export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
     pickupName: row.pickup_name,
     pickupPhone: row.pickup_phone,
     deliveryAddress: row.delivery_address,
+    cookId: row.cook_id ?? null,
+    cookName: cookRaw?.username ?? null,
     customer: customerRaw
       ? {
           first_name: customerRaw.first_name,

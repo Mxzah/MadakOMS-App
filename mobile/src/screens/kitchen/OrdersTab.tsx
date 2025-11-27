@@ -35,6 +35,8 @@ type OrdersTabProps = {
   isDark: boolean;
   notificationsEnabled: boolean;
   staffRole: string;
+  staffUserId: string;
+  kitchenMode: 'team' | 'individual' | 'chef';
 };
 
 export function OrdersTab({
@@ -43,6 +45,8 @@ export function OrdersTab({
   isDark,
   notificationsEnabled,
   staffRole,
+  staffUserId,
+  kitchenMode,
 }: OrdersTabProps) {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +55,9 @@ export function OrdersTab({
   const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
   const [reasonOrder, setReasonOrder] = useState<KitchenOrder | null>(null);
   const [reasonText, setReasonText] = useState('');
+  const [assignOrder, setAssignOrder] = useState<KitchenOrder | null>(null);
+  const [availableCooks, setAvailableCooks] = useState<Array<{ id: string; username: string }>>([]);
+  const [loadingCooks, setLoadingCooks] = useState(false);
   const latestReceivedIdsRef = useRef<Set<string>>(new Set());
   const hasMountedRef = useRef(false);
   const notificationPlayer = useAudioPlayer(NOTIFICATION_SOUND_URL, { downloadFirst: true });
@@ -158,6 +165,58 @@ export function OrdersTab({
     setRefreshing(false);
   }, [fetchOrders]);
 
+  const fetchAvailableCooks = useCallback(async () => {
+    setLoadingCooks(true);
+    try {
+      const { data, error } = await supabase
+        .from('staff_users')
+        .select('id, username')
+        .eq('restaurant_id', restaurantId)
+        .eq('role', 'cook')
+        .eq('is_active', true)
+        .order('username', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      setAvailableCooks(data ?? []);
+    } catch (err) {
+      Alert.alert('Erreur', 'Impossible de charger la liste des cuisiniers.');
+    } finally {
+      setLoadingCooks(false);
+    }
+  }, [restaurantId]);
+
+  const assignOrderToCook = useCallback(
+    async (orderId: string, cookId: string) => {
+      const payload = { status: 'preparing', cook_id: cookId };
+
+      const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
+      if (error) {
+        Alert.alert('Erreur', 'Échec de l\'assignation.');
+        return;
+      }
+
+      const eventPayload = { status: 'preparing', cook_id: cookId };
+
+      const { error: eventError } = await supabase.from('order_events').insert({
+        order_id: orderId,
+        actor_type: staffRole || 'chef',
+        event_type: 'status_changed',
+        payload: eventPayload,
+      });
+
+      if (eventError) {
+        console.warn('Impossible d\'enregistrer le journal des événements', eventError);
+      }
+
+      fetchOrders();
+      setAssignOrder(null);
+    },
+    [staffRole, fetchOrders]
+  );
+
   const updateOrderStatus = async (
     orderId: string,
     status: KitchenBoardStatus | 'cancelled',
@@ -166,6 +225,10 @@ export function OrdersTab({
     const payload: Record<string, any> = { status };
     if (cancellationReason) {
       payload.cancellation_reason = cancellationReason;
+    }
+    // Lorsqu'un cuisinier accepte une commande (statut passe à 'preparing'), on assigne son ID
+    if (status === 'preparing') {
+      payload.cook_id = staffUserId;
     }
 
     const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
@@ -178,6 +241,9 @@ export function OrdersTab({
     if (cancellationReason) {
       eventPayload.cancellation_reason = cancellationReason;
     }
+    if (status === 'preparing') {
+      eventPayload.cook_id = staffUserId;
+    }
 
     const { error: eventError } = await supabase.from('order_events').insert({
       order_id: orderId,
@@ -187,7 +253,7 @@ export function OrdersTab({
     });
 
     if (eventError) {
-      console.warn('Impossible d’enregistrer le journal des événements', eventError);
+      console.warn('Impossible d\'enregistrer le journal des événements', eventError);
     }
 
     fetchOrders();
@@ -196,7 +262,14 @@ export function OrdersTab({
   const filteredOrders = orders.filter((order) => {
     const statusMatch = order.status === selectedFilter;
     const deliveryOnly = selectedFilter !== 'received' || order.fulfillment === 'delivery';
-    return statusMatch && deliveryOnly;
+    
+    // En mode Individuel, dans "En préparation", on ne montre que les commandes assignées au cuisinier
+    const individualFilter =
+      kitchenMode === 'individual' && selectedFilter === 'preparing'
+        ? order.cookId === staffUserId
+        : true;
+    
+    return statusMatch && deliveryOnly && individualFilter;
   });
 
   return (
@@ -303,6 +376,16 @@ export function OrdersTab({
                     </View>
                   ))}
                 </View>
+                {(kitchenMode === 'team' || kitchenMode === 'chef') && order.cookName && (
+                  <Text
+                    style={[
+                      styles.cookNameText,
+                      { color: theme.textSecondary, textAlign: 'right', marginTop: 8 },
+                    ]}
+                  >
+                    Préparée par : {order.cookName}
+                  </Text>
+                )}
               </TouchableOpacity>
             );
           })
@@ -314,7 +397,14 @@ export function OrdersTab({
         theme={theme}
         isDark={isDark}
         activeFilter={selectedFilter}
+        kitchenMode={kitchenMode}
         onClose={() => setSelectedOrder(null)}
+        onAssign={() => {
+          if (!selectedOrder) return;
+          setAssignOrder(selectedOrder);
+          fetchAvailableCooks();
+          setSelectedOrder(null);
+        }}
         onAccept={() => {
           if (!selectedOrder) return;
           Alert.alert(
@@ -387,6 +477,18 @@ export function OrdersTab({
           setReasonOrder(null);
         }}
       />
+
+      <AssignCookModal
+        theme={theme}
+        order={assignOrder}
+        cooks={availableCooks}
+        loading={loadingCooks}
+        onCancel={() => setAssignOrder(null)}
+        onSelect={(cookId) => {
+          if (!assignOrder) return;
+          assignOrderToCook(assignOrder.id, cookId);
+        }}
+      />
     </View>
   );
 }
@@ -396,10 +498,12 @@ type OrderDetailModalProps = {
   theme: KitchenTheme;
   isDark: boolean;
   activeFilter: KitchenBoardStatus;
+  kitchenMode: 'team' | 'individual' | 'chef';
   onClose: () => void;
   onAccept: () => void;
   onMarkReady: () => void;
   onRefuse: () => void;
+  onAssign: () => void;
 };
 
 function OrderDetailModal({
@@ -407,10 +511,12 @@ function OrderDetailModal({
   theme,
   isDark,
   activeFilter,
+  kitchenMode,
   onClose,
   onAccept,
   onMarkReady,
   onRefuse,
+  onAssign,
 }: OrderDetailModalProps) {
   const shouldUseBlueBackground = isDark && activeFilter === 'ready';
   const closeButtonStyle = shouldUseBlueBackground
@@ -464,7 +570,15 @@ function OrderDetailModal({
                 ) : null}
               </View>
 
-              {order.status === 'received' && (
+              {order.status === 'received' && kitchenMode === 'chef' && activeFilter === 'received' && (
+                <TouchableOpacity
+                  style={[styles.primaryAction, { backgroundColor: theme.pillActiveBg }]}
+                  onPress={onAssign}
+                >
+                  <Text style={styles.primaryActionText}>Assigner à un cuisinier</Text>
+                </TouchableOpacity>
+              )}
+              {order.status === 'received' && kitchenMode !== 'chef' && (
                 <TouchableOpacity style={styles.primaryAction} onPress={onAccept}>
                   <Text style={styles.primaryActionText}>Accepter & préparer</Text>
                 </TouchableOpacity>
@@ -534,6 +648,79 @@ function ReasonModal({ order, theme, reason, onChangeReason, onCancel, onConfirm
             </View>
           </Pressable>
         </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+}
+
+type AssignCookModalProps = {
+  order: KitchenOrder | null;
+  theme: KitchenTheme;
+  cooks: Array<{ id: string; username: string }>;
+  loading: boolean;
+  onCancel: () => void;
+  onSelect: (cookId: string) => void;
+};
+
+function AssignCookModal({
+  order,
+  theme,
+  cooks,
+  loading,
+  onCancel,
+  onSelect,
+}: AssignCookModalProps) {
+  return (
+    <Modal visible={Boolean(order)} transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={styles.modalBackdrop} onPress={onCancel}>
+        <Pressable
+          style={[styles.reasonSheet, { backgroundColor: theme.surface }]}
+          onPress={(event) => event.stopPropagation()}
+        >
+          <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>
+            Assigner la commande #{order?.orderNumber ?? '—'}
+          </Text>
+          <Text style={[styles.modalMeta, { color: theme.textSecondary, marginBottom: 16 }]}>
+            Sélectionnez un cuisinier
+          </Text>
+          {loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator color={colors.accent} />
+            </View>
+          ) : cooks.length === 0 ? (
+            <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
+              Aucun cuisinier disponible
+            </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 300 }}>
+              {cooks.map((cook) => (
+                <TouchableOpacity
+                  key={cook.id}
+                  style={[
+                    styles.modeOption,
+                    {
+                      backgroundColor: theme.surfaceMuted,
+                      borderColor: theme.border,
+                      marginBottom: 10,
+                    },
+                  ]}
+                  onPress={() => onSelect(cook.id)}
+                >
+                  <Text style={[styles.modeOptionLabel, { color: theme.textPrimary }]}>
+                    {cook.username}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.secondaryAction} onPress={onCancel}>
+              <Text style={[styles.secondaryActionText, { color: theme.textPrimary }]}>
+                Annuler
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );

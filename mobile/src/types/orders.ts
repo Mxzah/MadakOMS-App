@@ -43,6 +43,8 @@ export type KitchenOrder = {
   pickupName?: string | null;
   pickupPhone?: string | null;
   deliveryAddress?: Record<string, any> | null;
+  cookId?: string | null;
+  cookName?: string | null;
   customer?: {
     first_name?: string | null;
     phone?: string | null;

@@ -120,6 +120,10 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  cookNameText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -263,6 +267,23 @@ export const styles = StyleSheet.create({
   },
   settingSubtitle: {
     fontSize: 13,
+  },
+  modeSelector: {
+    gap: 12,
+  },
+  modeOption: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+  },
+  modeOptionLabel: {
+    fontWeight: '700',
+    fontSize: 16,
+    marginBottom: 6,
+  },
+  modeOptionDescription: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   logoutCard: {
     marginTop: 12,
