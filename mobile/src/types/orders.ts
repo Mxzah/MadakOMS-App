@@ -51,6 +51,7 @@ export type KitchenOrder = {
     phone?: string | null;
     email?: string | null;
   } | null;
+  paymentMethod?: string | null;
   items: Array<{
     id: string;
     name: string;

@@ -19,6 +19,9 @@ export const ORDER_DETAIL_SELECT = `
     phone,
     email
   ),
+  payments!order_id (
+    method
+  ),
   order_items (
     id,
     name,
@@ -98,9 +101,26 @@ export const getCustomerPhone = (order: KitchenOrder) => {
   return order.deliveryAddress?.phone || order.customer?.phone || '—';
 };
 
+export const getCustomerEmail = (order: KitchenOrder) => {
+  return order.customer?.email || null;
+};
+
+export const formatPaymentMethod = (method: string | null | undefined): string => {
+  if (!method) return '—';
+  
+  const methodMap: Record<string, string> = {
+    card_online: 'Carte en ligne',
+    card_terminal: 'Carte au terminal',
+    cash: 'Espèces',
+  };
+  
+  return methodMap[method.toLowerCase()] || method;
+};
+
 export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
   const customerRaw = Array.isArray(row.customers) ? row.customers[0] : row.customers;
   const cookRaw = Array.isArray(row.cook) ? row.cook[0] : row.cook;
+  const paymentRaw = Array.isArray(row.payments) ? row.payments[0] : row.payments;
   return {
     id: row.id,
     orderNumber: row.order_number ?? null,
@@ -120,6 +140,7 @@ export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
           email: customerRaw.email,
         }
       : null,
+    paymentMethod: paymentRaw?.method ?? null,
     items:
       row.order_items?.map((item: any) => ({
         id: item.id,

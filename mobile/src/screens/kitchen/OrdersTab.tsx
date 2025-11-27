@@ -22,6 +22,8 @@ import {
   formatDateTime,
   getCustomerName,
   getCustomerPhone,
+  getCustomerEmail,
+  formatPaymentMethod,
   getPriorityFlags,
   mapOrderRowToKitchenOrder,
 } from '../../utils/orderHelpers';
@@ -112,7 +114,7 @@ export function OrdersTab({
 
   useEffect(() => {
     const receivedOrders = orders.filter(
-      (order) => order.status === 'received' && order.fulfillment === 'delivery'
+      (order) => order.status === 'received'
     );
     const nextIds = new Set(receivedOrders.map((order) => order.id));
 
@@ -261,7 +263,6 @@ export function OrdersTab({
 
   const filteredOrders = orders.filter((order) => {
     const statusMatch = order.status === selectedFilter;
-    const deliveryOnly = selectedFilter !== 'received' || order.fulfillment === 'delivery';
     
     // En mode Individuel, dans "En préparation", on ne montre que les commandes assignées au cuisinier
     const individualFilter =
@@ -269,7 +270,7 @@ export function OrdersTab({
         ? order.cookId === staffUserId
         : true;
     
-    return statusMatch && deliveryOnly && individualFilter;
+    return statusMatch && individualFilter;
   });
 
   return (
@@ -563,12 +564,28 @@ function OrderDetailModal({
                 <Text style={[styles.modalItemMeta, { color: theme.textSecondary }]}>
                   Tél. {getCustomerPhone(order)}
                 </Text>
+                {getCustomerEmail(order) ? (
+                  <Text style={[styles.modalItemMeta, { color: theme.textSecondary }]}>
+                    Courriel : {getCustomerEmail(order)}
+                  </Text>
+                ) : null}
                 {order.deliveryAddress ? (
                   <Text style={[styles.modalItemMeta, { color: theme.textSecondary }]}>
                     {formatAddress(order.deliveryAddress)}
                   </Text>
                 ) : null}
               </View>
+
+              {order.paymentMethod ? (
+                <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
+                  <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
+                    Méthode de paiement
+                  </Text>
+                  <Text style={[styles.modalItemText, { color: theme.textPrimary }]}>
+                    {formatPaymentMethod(order.paymentMethod)}
+                  </Text>
+                </View>
+              ) : null}
 
               {order.status === 'received' && kitchenMode === 'chef' && activeFilter === 'received' && (
                 <TouchableOpacity

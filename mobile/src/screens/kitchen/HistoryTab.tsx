@@ -18,6 +18,8 @@ import {
   formatDateTime,
   getCustomerName,
   getCustomerPhone,
+  getCustomerEmail,
+  formatPaymentMethod,
   historyStatusStyle,
   historySubtitle,
   mapOrderRowToKitchenOrder,
@@ -344,12 +346,27 @@ export function HistoryTab({
                   <Text style={[styles.modalItemMeta, { color: theme.textSecondary }]}>
                     Tél. {getCustomerPhone(detail)}
                   </Text>
+                  {getCustomerEmail(detail) ? (
+                    <Text style={[styles.modalItemMeta, { color: theme.textSecondary }]}>
+                      Courriel : {getCustomerEmail(detail)}
+                    </Text>
+                  ) : null}
                   {detail.deliveryAddress ? (
                     <Text style={[styles.modalItemMeta, { color: theme.textSecondary }]}>
                       {formatAddress(detail.deliveryAddress)}
                     </Text>
                   ) : null}
                 </View>
+                {detail.paymentMethod ? (
+                  <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
+                    <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
+                      Méthode de paiement
+                    </Text>
+                    <Text style={[styles.modalItemText, { color: theme.textPrimary }]}>
+                      {formatPaymentMethod(detail.paymentMethod)}
+                    </Text>
+                  </View>
+                ) : null}
                 <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                   <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
                     Articles
