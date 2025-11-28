@@ -14,18 +14,18 @@ const KITCHEN_MODES = [
   {
     id: 'team',
     label: 'Équipe',
-    description: 'Dans "En préparation", vous voyez toutes les commandes de tous les cuisiniers.',
+    description: 'Dans "En préparation" et "Historique", vous voyez toutes les commandes de tous les cuisiniers.',
   },
   {
     id: 'individual',
     label: 'Individuel',
-    description: 'Dans "En préparation", vous voyez seulement les commandes qui vous sont assignées.',
+    description: 'Dans "En préparation" et "Historique", vous voyez seulement les commandes qui vous sont assignées.',
   },
   {
     id: 'chef',
     label: 'Chef',
     description:
-      'Dans "Nouvelles", vous pouvez assigner les commandes aux cuisiniers. Dans "En préparation", vous voyez toutes les commandes.',
+      'Dans "Nouvelles" vous pouvez assigner les commandes aux cuisiniers. Dans "En préparation" et "Historique", vous voyez toutes les commandes.',
   },
 ] as const;
 

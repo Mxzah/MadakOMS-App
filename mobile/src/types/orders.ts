@@ -14,6 +14,12 @@ export type AssignedOrder = {
   status: 'assigned' | 'ready' | 'pickup' | 'enroute' | 'completed' | 'failed' | 'cancelled';
   driverId?: string | null;
   driverName?: string | null;
+  dropOption?: string | null;
+  apartmentSuite?: string | null;
+  notes?: string | null;
+  scheduledAt?: string | null;
+  paymentMethod?: string | null;
+  tipAmount?: number | null;
 };
 
 export type AvailableOrder = {
@@ -29,6 +35,9 @@ export type AvailableOrder = {
   customerPhone?: string | null;
   customerEmail?: string | null;
   itemsSummary?: string | null;
+  scheduledAt?: string | null;
+  paymentMethod?: string | null;
+  tipAmount?: number | null;
 };
 
 export type KitchenBoardStatus = 'received' | 'preparing' | 'ready';
@@ -52,6 +61,7 @@ export type KitchenOrder = {
     email?: string | null;
   } | null;
   paymentMethod?: string | null;
+  tipAmount?: number | null;
   items: Array<{
     id: string;
     name: string;

@@ -8,6 +8,10 @@ export const ORDER_DETAIL_SELECT = `
   pickup_name,
   pickup_phone,
   delivery_address,
+  drop_option,
+  apartment_suite,
+  notes,
+  tip_amount,
   cook_id,
   cook:staff_users!cook_id (
     username
@@ -16,6 +20,9 @@ export const ORDER_DETAIL_SELECT = `
     first_name,
     phone,
     email
+  ),
+  payments!order_id (
+    method
   ),
   order_items (
     id,

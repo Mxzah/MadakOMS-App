@@ -10,6 +10,7 @@ export const ORDER_DETAIL_SELECT = `
   pickup_name,
   pickup_phone,
   delivery_address,
+  tip_amount,
   cook_id,
   cook:staff_users!cook_id (
     username
@@ -141,6 +142,7 @@ export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
         }
       : null,
     paymentMethod: paymentRaw?.method ?? null,
+    tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
     items:
       row.order_items?.map((item: any) => ({
         id: item.id,

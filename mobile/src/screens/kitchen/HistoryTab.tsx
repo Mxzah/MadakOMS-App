@@ -365,6 +365,11 @@ export function HistoryTab({
                     <Text style={[styles.modalItemText, { color: theme.textPrimary }]}>
                       {formatPaymentMethod(detail.paymentMethod)}
                     </Text>
+                    {detail.tipAmount && detail.tipAmount > 0 ? (
+                      <Text style={[styles.modalItemMeta, { color: theme.textSecondary, marginTop: 8 }]}>
+                        Pourboire : ${detail.tipAmount.toFixed(2)}
+                      </Text>
+                    ) : null}
                   </View>
                 ) : null}
                 <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>

@@ -75,6 +75,8 @@ type HistoryEntry = {
   timestamp: string;
   failureReason?: string | null;
   driverName?: string | null;
+  paymentMethod?: string | null;
+  tipAmount?: number | null;
 };
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
@@ -156,6 +158,57 @@ const historyStatusStyle = (status: AssignedOrder['status']) => {
   }
 };
 
+const translateDropOption = (dropOption: string): string => {
+  const lower = dropOption.toLowerCase().trim();
+  if (lower === 'door') {
+    return 'Laisser à la porte';
+  }
+  if (lower === 'hand') {
+    return 'Remettre en main propre';
+  }
+  // Retourner la valeur originale si ce n'est pas une valeur connue
+  return dropOption;
+};
+
+const translatePaymentMethod = (paymentMethod: string): string => {
+  const lower = paymentMethod.toLowerCase().trim();
+  if (lower === 'card' || lower === 'carte') {
+    return 'Carte';
+  }
+  if (lower === 'card_terminal' || lower === 'terminal de paiement') {
+    return 'Terminal de paiement';
+  }
+  if (lower === 'cash' || lower === 'especes' || lower === 'espèces') {
+    return 'Espèces';
+  }
+  if (lower === 'online' || lower === 'paid_online' || lower === 'payé en ligne') {
+    return 'Payé en ligne';
+  }
+  if (lower === 'pay_on_delivery' || lower === 'paiement à la livraison') {
+    return 'Paiement à la livraison';
+  }
+  if (lower === 'payable à la porte') {
+    return 'Payable à la porte';
+  }
+  if (lower === 'interac') {
+    return 'Interac';
+  }
+  // Retourner la valeur originale si ce n'est pas une valeur connue
+  return paymentMethod;
+};
+
+const formatHistoryPayment = (paymentMethod: string | null | undefined): string | null => {
+  if (!paymentMethod) return null;
+  const lower = paymentMethod.toLowerCase().trim();
+  if (lower === 'card_online') {
+    return 'Payé en ligne';
+  }
+  if (lower === 'cash' || lower === 'card_terminal' || lower === 'interac') {
+    return translatePaymentMethod(paymentMethod);
+  }
+  return null;
+};
+
 type DeliveryViewProps = {
   staff: {
     restaurantId: string;
@@ -189,6 +242,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const [failureReason, setFailureReason] = useState('');
   const [historyOrders, setHistoryOrders] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historySearch, setHistorySearch] = useState('');
   const [assignOrder, setAssignOrder] = useState<AssignedOrder | null>(null);
   const [availableDrivers, setAvailableDrivers] = useState<Array<{ id: string; username: string }>>([]);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
@@ -312,6 +366,9 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       customerName: row.customer?.first_name ?? null,
       customerPhone: row.customer?.phone ?? null,
       customerEmail: row.customer?.email ?? null,
+      scheduledAt: row.scheduled_at ?? null,
+      paymentMethod: Array.isArray(row.payments) ? row.payments[0]?.method ?? null : row.payments?.method ?? null,
+      tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
     };
     },
     [driverLocation]
@@ -323,7 +380,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       const { data, error } = await supabase
         .from('orders')
         .select(
-          'id, order_number, status, delivery_address, customer:customer_id(first_name, phone, email)'
+          'id, order_number, status, delivery_address, scheduled_at, tip_amount, customer:customer_id(first_name, phone, email), payments!order_id(method)'
         )
         .eq('restaurant_id', staff.restaurantId)
         .in('status', ['ready', 'assigned', 'enroute'])
@@ -380,6 +437,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           delivery_address,
           status,
           driver_id,
+          drop_option,
+          apartment_suite,
+          notes,
+          scheduled_at,
+          tip_amount,
+          payments!order_id (
+            method
+          ),
           driver:staff_users!driver_id (
             username
           ),
@@ -430,6 +495,12 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           status: row.status as AssignedOrder['status'],
           driverId: row.driver_id ?? null,
           driverName: driverInfo?.username ?? null,
+          dropOption: row.drop_option ?? null,
+          apartmentSuite: row.apartment_suite ?? null,
+          notes: row.notes ?? null,
+          scheduledAt: row.scheduled_at ?? null,
+          paymentMethod: Array.isArray(row.payments) ? row.payments[0]?.method ?? null : row.payments?.method ?? null,
+          tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
         } as AssignedOrder;
       }) ?? [];
 
@@ -506,8 +577,12 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
             cancelled_at,
             failure_reason,
             driver_id,
+            tip_amount,
             driver:staff_users!driver_id (
               username
+            ),
+            payments!order_id (
+              method
             )
           )
         `
@@ -521,6 +596,10 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
 
       // Filtrer par restaurant_id et gérer les doublons (prendre le dernier événement pour chaque commande)
       const orderMap = new Map<string, any>();
+      
+      // Date de début de la journée (minuit aujourd'hui)
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
 
       eventsData?.forEach((event: any) => {
         const order = Array.isArray(event.orders) ? event.orders[0] : event.orders;
@@ -532,6 +611,10 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         // Filtrer uniquement les événements avec status 'completed', 'cancelled' ou 'failed'
         if (status !== 'completed' && status !== 'cancelled' && status !== 'failed') return;
 
+        // Filtrer uniquement les événements de la journée
+        const eventDate = new Date(event.created_at);
+        if (eventDate < todayStart) return;
+
         // En mode "Individuel", on filtre par driver_id
         if (settings.deliveryMode === 'individual' && order.driver_id !== staff.staffUserId) return;
 
@@ -540,6 +623,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         // Si on n'a pas encore cette commande, ou si cet événement est plus récent, on le garde
         if (!orderMap.has(orderId) || new Date(event.created_at) > new Date(orderMap.get(orderId).eventCreatedAt)) {
           const driverInfo = Array.isArray(order.driver) ? order.driver[0] : order.driver;
+          const paymentInfo = Array.isArray(order.payments) ? order.payments[0] : order.payments;
           orderMap.set(orderId, {
             id: order.id,
             orderNumber: order.order_number ?? null,
@@ -547,6 +631,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
             timestamp: order.completed_at ?? order.cancelled_at ?? order.updated_at,
             failureReason: order.failure_reason ?? payload.failure_reason ?? null,
             driverName: driverInfo?.username ?? null,
+            paymentMethod: paymentInfo?.method ?? null,
+            tipAmount: order.tip_amount ? Number(order.tip_amount) : null,
             eventCreatedAt: event.created_at,
           });
         }
@@ -810,6 +896,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         }
 
         const customerRaw = Array.isArray(data.customers) ? data.customers[0] : data.customers;
+        const dataWithDropInfo = data as any;
+        const paymentInfo = Array.isArray(dataWithDropInfo.payments) ? dataWithDropInfo.payments[0] : dataWithDropInfo.payments;
         const detailItems =
           data.order_items?.map((item: any) => ({
             id: item.id,
@@ -834,6 +922,11 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           eta: '',
           distance: '',
           status: data.status as AssignedOrder['status'],
+          dropOption: dataWithDropInfo.drop_option ?? null,
+          apartmentSuite: dataWithDropInfo.apartment_suite ?? null,
+          notes: dataWithDropInfo.notes ?? null,
+          paymentMethod: paymentInfo?.method ?? null,
+          tipAmount: dataWithDropInfo.tip_amount ? Number(dataWithDropInfo.tip_amount) : null,
         });
       } catch (err) {
         Alert.alert(
@@ -934,6 +1027,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               paymentInfo: 'paid_online',
               eta: candidate.eta,
               status: candidate.status ?? 'ready',
+              paymentMethod: candidate.paymentMethod ?? null,
+              tipAmount: candidate.tipAmount ?? null,
             });
             setPreviewItems([]);
             fetchOrderItems(candidate.id);
@@ -949,18 +1044,18 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           id: 'team',
           label: 'Équipe',
           description:
-            'Dans "Livraisons actives", vous voyez toutes les livraisons avec le nom du livreur en haut à droite.',
+            'Dans "Livraisons actives" et dans "Historique", vous voyez toutes les livraisons avec le nom du livreur en haut à droite.',
         },
         {
           id: 'individual',
           label: 'Individuel',
-          description: 'Dans "Livraisons actives", vous voyez seulement les livraisons qui vous sont assignées.',
+          description: 'Dans "Livraisons actives" et dans "Historique", vous voyez seulement les livraisons qui vous sont assignées.',
         },
         {
           id: 'coordinator',
           label: 'Coordinateur',
           description:
-            'Dans "Livraisons actives", vous voyez toutes les livraisons avec le nom du livreur et pouvez assigner les commandes aux livreurs.',
+            'Dans "Livraisons actives" et dans "Historique", vous voyez toutes les livraisons avec le nom du livreur et pouvez assigner les commandes aux livreurs.',
         },
       ] as const;
 
@@ -1099,39 +1194,87 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
 
     if (deliveryTab === 'history') {
+      const filteredHistoryOrders = historySearch
+        ? historyOrders.filter((entry) =>
+            `${entry.orderNumber ?? ''}`.toLowerCase().includes(historySearch.toLowerCase())
+          )
+        : historyOrders;
+
       return (
         <View style={styles.historyList}>
-          {historyOrders.map((entry) => {
-            const badgeStyle = historyStatusStyle(entry.status);
-            return (
-              <TouchableOpacity
-                key={entry.id}
-                style={styles.historyCard}
-                onPress={() => openHistoryDetail(entry.id)}
-              >
-                <View style={styles.historyHeader}>
-                  <Text style={styles.historyOrderNumber}>Commande #{entry.orderNumber ?? '—'}</Text>
-                  <View style={[styles.historyBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
-                    <Text style={[styles.historyBadgeText, { color: badgeStyle.color }]}>
-                      {historyStatusLabel(entry.status)}
-                    </Text>
-                  </View>
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                  <Text style={styles.historyMeta}>{formatDateTime(entry.timestamp)}</Text>
-                  {(settings.deliveryMode === 'team' || settings.deliveryMode === 'coordinator') &&
-                    entry.driverName && (
-                      <Text style={[styles.historyMeta, { fontStyle: 'italic', textAlign: 'right' }]}>
-                        Livré par : {entry.driverName}
-                      </Text>
-                    )}
-                </View>
-                {entry.status === 'failed' && entry.failureReason ? (
-                  <Text style={styles.historyFailure}>Motif: {entry.failureReason}</Text>
-                ) : null}
+          <View style={styles.searchRow}>
+            <TextInput
+              value={historySearch}
+              onChangeText={setHistorySearch}
+              placeholder="Rechercher # commande"
+              placeholderTextColor={palette.muted}
+              style={[
+                styles.searchInput,
+                { borderColor: palette.border, color: palette.dark, backgroundColor: palette.surface },
+              ]}
+            />
+            {historySearch ? (
+              <TouchableOpacity style={styles.clearButton} onPress={() => setHistorySearch('')}>
+                <Text style={styles.clearButtonText}>Effacer</Text>
               </TouchableOpacity>
-            );
-          })}
+            ) : null}
+          </View>
+          {filteredHistoryOrders.length === 0 ? (
+            <View style={styles.deliveryEmpty}>
+              <Text style={styles.deliveryEmptyTitle}>
+                {historySearch ? 'Aucun résultat' : 'Aucune livraison passée'}
+              </Text>
+              <Text style={styles.deliveryEmptySubtitle}>
+                {historySearch
+                  ? 'Aucune commande ne correspond à votre recherche.'
+                  : 'Vos livraisons terminées apparaîtront ici.'}
+              </Text>
+            </View>
+          ) : (
+            <>
+              {filteredHistoryOrders.map((entry) => {
+                const badgeStyle = historyStatusStyle(entry.status);
+                return (
+                  <TouchableOpacity
+                    key={entry.id}
+                    style={styles.historyCard}
+                    onPress={() => openHistoryDetail(entry.id)}
+                  >
+                    <View style={styles.historyHeader}>
+                      <Text style={styles.historyOrderNumber}>Commande #{entry.orderNumber ?? '—'}</Text>
+                      <View style={[styles.historyBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
+                        <Text style={[styles.historyBadgeText, { color: badgeStyle.color }]}>
+                          {historyStatusLabel(entry.status)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <Text style={styles.historyMeta}>{formatDateTime(entry.timestamp)}</Text>
+                      {(settings.deliveryMode === 'team' || settings.deliveryMode === 'coordinator') &&
+                        entry.driverName && (
+                          <Text style={[styles.historyMeta, { fontStyle: 'italic', textAlign: 'right' }]}>
+                            Livré par : {entry.driverName}
+                          </Text>
+                        )}
+                    </View>
+                    {formatHistoryPayment(entry.paymentMethod) ? (
+                      <Text style={styles.historyMeta}>
+                        Paiement : {formatHistoryPayment(entry.paymentMethod)}
+                      </Text>
+                    ) : null}
+                    {entry.tipAmount && entry.tipAmount > 0 ? (
+                      <Text style={styles.historyMeta}>
+                        Pourboire : ${entry.tipAmount.toFixed(2)}
+                      </Text>
+                    ) : null}
+                    {entry.status === 'failed' && entry.failureReason ? (
+                      <Text style={styles.historyFailure}>Motif: {entry.failureReason}</Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
         </View>
       );
     }
@@ -1345,6 +1488,21 @@ function AvailableOrdersList({
             <Text style={styles.availableCity}>{order.city}</Text>
           </View>
           <Text style={styles.availableAddress}>{order.address}</Text>
+          {order.scheduledAt ? (
+            <Text style={[styles.availableMeta, { marginTop: 4 }]}>
+              Prévue : {formatDateTime(order.scheduledAt)}
+            </Text>
+          ) : null}
+          {order.paymentMethod ? (
+            <Text style={[styles.availableMeta, { marginTop: 4 }]}>
+              Paiement : {translatePaymentMethod(order.paymentMethod)}
+            </Text>
+          ) : null}
+          {order.tipAmount && order.tipAmount > 0 ? (
+            <Text style={[styles.availableMeta, { marginTop: 4 }]}>
+              Pourboire : ${order.tipAmount.toFixed(2)}
+            </Text>
+          ) : null}
           <View style={styles.availableMetaRow}>
             <Text style={styles.availableMeta}>{order.distance}</Text>
             <Text style={styles.availableMeta}>{order.eta}</Text>
@@ -1425,10 +1583,28 @@ function DeliveryCard({
         <Text style={styles.availableCity}>{headerRightLabel}</Text>
       </View>
       <Text style={styles.availableAddress}>{order.customerAddress}</Text>
-      <View style={styles.availableMetaRow}>
-        <Text style={styles.availableMeta}>
-          Paiement : {order.paymentInfo === 'paid_online' ? 'Payé en ligne' : 'Payable à la porte'}
+      {order.scheduledAt ? (
+        <Text style={[styles.availableMeta, { marginTop: 4 }]}>
+          Prévue : {formatDateTime(order.scheduledAt)}
         </Text>
+      ) : null}
+      <View style={styles.availableMetaRow}>
+        <View style={{ flex: 1 }}>
+          {formatHistoryPayment(order.paymentMethod) ? (
+            <Text style={styles.availableMeta}>
+              Paiement : {formatHistoryPayment(order.paymentMethod)}
+            </Text>
+          ) : (
+            <Text style={styles.availableMeta}>
+              Paiement : {order.paymentInfo === 'paid_online' ? 'Payé en ligne' : 'Payable à la porte'}
+            </Text>
+          )}
+          {order.tipAmount && order.tipAmount > 0 ? (
+            <Text style={styles.availableMeta}>
+              Pourboire : ${order.tipAmount.toFixed(2)}
+            </Text>
+          ) : null}
+        </View>
         {order.eta ? <Text style={styles.availableMeta}>ETA : {order.eta}</Text> : null}
       </View>
 
@@ -1520,15 +1696,33 @@ function DeliveryCard({
               { backgroundColor: palette.surface, borderColor: palette.border },
             ]}
           >
-            <Text style={[styles.previewSectionTitle, { color: palette.dark }]}>Client</Text>
-            <Text style={[styles.previewSectionValue, { color: palette.dark }]}>{clientName}</Text>
-            <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>
-              Tél. {clientPhone}
-            </Text>
-            <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>{clientEmail}</Text>
-            <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>
-              {order.customerAddress}
-            </Text>
+            <Text style={[styles.previewSectionTitle, { color: palette.dark, marginBottom: 12 }]}>Client</Text>
+            <Text style={[styles.previewSectionValue, { color: palette.dark, marginBottom: 8 }]}>{clientName}</Text>
+            <View style={{ marginBottom: 8 }}>
+              <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>
+                Tél. {clientPhone}
+              </Text>
+              <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>{clientEmail}</Text>
+            </View>
+            {(order.apartmentSuite || order.dropOption || order.notes) && (
+              <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border }}>
+                {order.apartmentSuite ? (
+                  <Text style={[styles.previewSectionMeta, { color: palette.muted, marginBottom: 6 }]}>
+                    Appartement/Suite : {order.apartmentSuite}
+                  </Text>
+                ) : null}
+                {order.dropOption ? (
+                  <Text style={[styles.previewSectionMeta, { color: palette.muted, marginBottom: 6, fontWeight: '600' }]}>
+                    Instructions de dépôt : {translateDropOption(order.dropOption)}
+                  </Text>
+                ) : null}
+                {order.notes ? (
+                  <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>
+                    Note : {order.notes}
+                  </Text>
+                ) : null}
+              </View>
+            )}
           </View>
 
           <View
@@ -1823,6 +2017,29 @@ function createStyles(palette: Palette) {
   },
   historyList: {
     gap: 12,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
+  clearButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  clearButtonText: {
+    color: colors.accent,
+    fontWeight: '600',
+    fontSize: 14,
   },
   historyCard: {
     backgroundColor: colors.surface,
