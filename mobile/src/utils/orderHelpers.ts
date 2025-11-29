@@ -12,6 +12,7 @@ export const ORDER_DETAIL_SELECT = `
   delivery_address,
   tip_amount,
   cook_id,
+  driver_id,
   cook:staff_users!cook_id (
     username
   ),
@@ -134,6 +135,7 @@ export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
     deliveryAddress: row.delivery_address,
     cookId: row.cook_id ?? null,
     cookName: cookRaw?.username ?? null,
+    driverId: row.driver_id ?? null,
     customer: customerRaw
       ? {
           first_name: customerRaw.first_name,

@@ -61,6 +61,7 @@ export type KitchenOrder = {
   deliveryAddress?: Record<string, any> | null;
   cookId?: string | null;
   cookName?: string | null;
+  driverId?: string | null;
   customer?: {
     first_name?: string | null;
     phone?: string | null;
