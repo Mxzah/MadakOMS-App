@@ -41,7 +41,13 @@ export type AvailableOrder = {
 };
 
 export type KitchenBoardStatus = 'received' | 'preparing' | 'ready';
-export type KitchenStatus = KitchenBoardStatus | 'completed' | 'cancelled' | 'enroute' | 'failed';
+export type KitchenStatus =
+  | KitchenBoardStatus
+  | 'completed'
+  | 'cancelled'
+  | 'enroute'
+  | 'failed'
+  | 'assigned';
 
 export type KitchenOrder = {
   id: string;

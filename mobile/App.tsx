@@ -19,6 +19,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from './src/lib/supabase';
 import { DeliveryView } from './src/screens/DeliveryView';
 import { KitchenView } from './src/screens/KitchenView';
+import { ManagerView } from './src/screens/ManagerView';
 import { RoleId, StaffSession } from './src/types/staff';
 import { extractRestaurantName } from './src/utils/orderHelpers';
 import { isWithinWorkHours, getWorkScheduleMessage } from './src/utils/workScheduleHelpers';
@@ -54,7 +55,7 @@ export default function App() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null
   );
-  const [screen, setScreen] = useState<'login' | 'kitchen' | 'delivery'>('login');
+  const [screen, setScreen] = useState<'login' | 'kitchen' | 'delivery' | 'manager'>('login');
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [hydrating, setHydrating] = useState(true);
   const [workScheduleData, setWorkScheduleData] = useState<{
@@ -153,7 +154,13 @@ export default function App() {
         restaurantName: extractRestaurantName(restaurant),
         staffUserId: staffRecord.id,
       });
-      setScreen(staffRecord.role === 'delivery' ? 'delivery' : 'kitchen');
+      setScreen(
+        staffRecord.role === 'delivery'
+          ? 'delivery'
+          : staffRecord.role === 'manager'
+          ? 'manager'
+          : 'kitchen'
+      );
       setFeedback(null);
     } catch (err) {
       const message =
@@ -207,7 +214,13 @@ export default function App() {
             staffUserId: staffRecord.id,
           });
           setSelectedRole(staffRecord.role as RoleId);
-          setScreen(staffRecord.role === 'delivery' ? 'delivery' : 'kitchen');
+          setScreen(
+            staffRecord.role === 'delivery'
+              ? 'delivery'
+              : staffRecord.role === 'manager'
+              ? 'manager'
+              : 'kitchen'
+          );
         }
       } catch (err) {
         console.warn(err);
@@ -276,6 +289,8 @@ export default function App() {
     content = <KitchenView staff={staffSession} onLogout={handleLogout} />;
   } else if (screen === 'delivery' && staffSession) {
     content = <DeliveryView staff={staffSession} onLogout={handleLogout} />;
+  } else if (screen === 'manager' && staffSession) {
+    content = <ManagerView staff={staffSession} onLogout={handleLogout} />;
   } else if (hydrating) {
     content = (
       <SafeAreaView style={styles.safeArea}>
