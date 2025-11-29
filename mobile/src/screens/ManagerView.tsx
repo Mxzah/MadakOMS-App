@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -82,6 +84,9 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
   const [addTempPassword, setAddTempPassword] = useState<string | null>(null);
   const [addSaving, setAddSaving] = useState(false);
 
+  const [resetPasswordModalVisible, setResetPasswordModalVisible] = useState(false);
+  const [resetPasswordMode, setResetPasswordMode] = useState<'random' | 'custom'>('random');
+  const [resetPasswordCustom, setResetPasswordCustom] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
   const fetchOrders = useCallback(async () => {
@@ -211,7 +216,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
     return true;
   };
 
-  const handleResetPassword = useCallback(async () => {
+  const handleResetPassword = useCallback(() => {
     if (!ensureStaffSelected()) return;
     if (!selectedStaff) return;
 
@@ -220,48 +225,61 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
       return;
     }
 
-    Alert.alert(
-      'Réinitialiser le mot de passe',
-      `Un nouveau mot de passe temporaire sera généré pour ${selectedStaff.username}.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Confirmer',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setActionLoading(true);
-              const { data, error } = await supabase.functions.invoke('staff-admin', {
-                body: {
-                  action: 'reset_password',
-                  authUserId: selectedStaff.authUserId,
-                },
-              });
-
-              if (error) {
-                console.warn(error);
-                Alert.alert('Erreur', 'Impossible de réinitialiser le mot de passe.');
-                return;
-              }
-
-              const newPassword = (data as any)?.tempPassword as string | undefined;
-              if (newPassword) {
-                Alert.alert(
-                  'Mot de passe réinitialisé',
-                  `Nouveau mot de passe pour ${selectedStaff.username} :\n\n${newPassword}\n\nCommuniquez ce mot de passe au membre.`,
-                  [{ text: 'OK' }],
-                );
-              } else {
-                Alert.alert('Erreur', 'Le mot de passe a été réinitialisé mais le nouveau mot de passe n\'a pas été retourné.');
-              }
-            } finally {
-              setActionLoading(false);
-            }
-          },
-        },
-      ],
-    );
+    setResetPasswordMode('random');
+    setResetPasswordCustom('');
+    setResetPasswordModalVisible(true);
   }, [selectedStaff]);
+
+  const handleConfirmResetPassword = useCallback(async () => {
+    if (!selectedStaff) return;
+
+    if (resetPasswordMode === 'custom' && !resetPasswordCustom.trim()) {
+      Alert.alert('Erreur', 'Veuillez entrer un mot de passe personnalisé.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      
+      const bodyPayload: any = {
+        action: 'reset_password',
+        authUserId: selectedStaff.authUserId,
+      };
+      
+      // Ajoute le password seulement si c'est en mode personnalisé et qu'il n'est pas vide
+      if (resetPasswordMode === 'custom') {
+        const trimmedPassword = resetPasswordCustom.trim();
+        if (trimmedPassword.length > 0) {
+          bodyPayload.password = trimmedPassword;
+        }
+      }
+
+      const { data, error } = await supabase.functions.invoke('staff-admin', {
+        body: bodyPayload,
+      });
+
+      if (error) {
+        console.warn(error);
+        Alert.alert('Erreur', 'Impossible de réinitialiser le mot de passe.');
+        return;
+      }
+
+      const newPassword = (data as any)?.tempPassword as string | undefined;
+      if (newPassword) {
+        setResetPasswordModalVisible(false);
+        Alert.alert(
+          'Mot de passe réinitialisé',
+          `Nouveau mot de passe pour ${selectedStaff.username} :\n\n${newPassword}\n\nCommuniquez ce mot de passe au membre.`,
+          [{ text: 'OK' }],
+        );
+        setResetPasswordCustom('');
+      } else {
+        Alert.alert('Erreur', 'Le mot de passe a été réinitialisé mais le nouveau mot de passe n\'a pas été retourné.');
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  }, [selectedStaff, resetPasswordMode, resetPasswordCustom]);
 
   const handleToggleActive = useCallback(async () => {
     if (!ensureStaffSelected()) return;
@@ -693,8 +711,15 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
         onRequestClose={() => setAddModalVisible(false)}
       >
         <Pressable style={styles.modalBackdrop} onPress={() => setAddModalVisible(false)}>
-          <Pressable style={styles.modalSheet}>
-            <ScrollView contentContainerStyle={styles.modalContent}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1, justifyContent: 'flex-end' }}
+          >
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <ScrollView 
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+              >
               <Text style={styles.modalTitle}>Ajouter un membre</Text>
               <Text style={styles.modalMeta}>
                 Un compte interne sera créé avec un courriel pseudo comme
@@ -789,7 +814,109 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
                 <Text style={[styles.modalCloseText, { color: colors.dark }]}>Fermer</Text>
               </TouchableOpacity>
             </ScrollView>
-          </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={resetPasswordModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setResetPasswordModalVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setResetPasswordModalVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1, justifyContent: 'flex-end' }}
+          >
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <ScrollView 
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+              >
+              <Text style={styles.modalTitle}>Réinitialiser le mot de passe</Text>
+              <Text style={styles.modalMeta}>
+                Choisissez comment réinitialiser le mot de passe pour {selectedStaff?.username}.
+              </Text>
+
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Mode de réinitialisation</Text>
+                <View style={styles.segmented}>
+                  <TouchableOpacity
+                    style={[
+                      styles.segment,
+                      resetPasswordMode === 'random' && styles.segmentActive,
+                      { flex: 1 },
+                    ]}
+                    onPress={() => setResetPasswordMode('random')}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        resetPasswordMode === 'random' && styles.segmentTextActive,
+                      ]}
+                    >
+                      Aléatoire
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.segment,
+                      resetPasswordMode === 'custom' && styles.segmentActive,
+                      { flex: 1 },
+                    ]}
+                    onPress={() => setResetPasswordMode('custom')}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        resetPasswordMode === 'custom' && styles.segmentTextActive,
+                      ]}
+                    >
+                      Personnalisé
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {resetPasswordMode === 'custom' && (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Mot de passe personnalisé</Text>
+                  <TextInput
+                    value={resetPasswordCustom}
+                    onChangeText={setResetPasswordCustom}
+                    placeholder="Entrez le nouveau mot de passe"
+                    placeholderTextColor={colors.muted}
+                    style={styles.searchInput}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.modalCloseButton, actionLoading && { opacity: 0.6 }]}
+                onPress={handleConfirmResetPassword}
+                disabled={actionLoading}
+              >
+                <Text style={styles.modalCloseText}>
+                  {actionLoading ? 'Réinitialisation…' : 'Confirmer'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalCloseButton, { backgroundColor: '#E5E7EB', marginTop: 8 }]}
+                onPress={() => {
+                  setResetPasswordModalVisible(false);
+                  setResetPasswordCustom('');
+                }}
+              >
+                <Text style={[styles.modalCloseText, { color: colors.dark }]}>Annuler</Text>
+              </TouchableOpacity>
+            </ScrollView>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </SafeAreaView>
