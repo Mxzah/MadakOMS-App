@@ -48,6 +48,8 @@ type StaffUser = {
   role: string;
   isActive: boolean;
   authUserId: string;
+  workScheduleEnabled?: boolean;
+  workSchedule?: any;
 };
 
 const STATUS_SECTIONS: Array<{
@@ -89,6 +91,11 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
   const [resetPasswordCustom, setResetPasswordCustom] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [schedule, setSchedule] = useState<Record<string, { enabled: boolean; start: string; end: string }>>({});
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+
   const fetchOrders = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -123,7 +130,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
       setStaffLoading(true);
       const { data, error } = await supabase
         .from('staff_users')
-        .select('id, username, role, is_active, auth_user_id')
+        .select('id, username, role, is_active, auth_user_id, work_schedule_enabled, work_schedule')
         .eq('restaurant_id', staff.restaurantId)
         .order('username', { ascending: true });
 
@@ -139,6 +146,8 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           role: row.role,
           isActive: row.is_active,
           authUserId: row.auth_user_id,
+          workScheduleEnabled: row.work_schedule_enabled || false,
+          workSchedule: row.work_schedule || null,
         })),
       );
     } finally {
@@ -280,6 +289,95 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
       setActionLoading(false);
     }
   }, [selectedStaff, resetPasswordMode, resetPasswordCustom]);
+
+  const handleOpenScheduleModal = useCallback(() => {
+    if (!ensureStaffSelected()) return;
+    if (!selectedStaff) return;
+
+    setScheduleEnabled(selectedStaff.workScheduleEnabled || false);
+    
+    // Initialiser avec tous les jours (même s'ils ne sont pas dans le JSON)
+    const defaultSchedule: Record<string, { enabled: boolean; start: string; end: string }> = {
+      monday: { enabled: false, start: '', end: '' },
+      tuesday: { enabled: false, start: '', end: '' },
+      wednesday: { enabled: false, start: '', end: '' },
+      thursday: { enabled: false, start: '', end: '' },
+      friday: { enabled: false, start: '', end: '' },
+      saturday: { enabled: false, start: '', end: '' },
+      sunday: { enabled: false, start: '', end: '' },
+    };
+
+    // Remplir avec les données existantes
+    if (selectedStaff.workSchedule) {
+      Object.keys(defaultSchedule).forEach((day) => {
+        const dayData = selectedStaff.workSchedule?.[day];
+        if (dayData) {
+          // Nouvelle structure avec enabled
+          if (typeof dayData.enabled === 'boolean') {
+            defaultSchedule[day] = {
+              enabled: dayData.enabled, // Utiliser directement la valeur de enabled
+              start: dayData.start || '',
+              end: dayData.end || '',
+            };
+          } else {
+            // Ancienne structure (rétrocompatibilité)
+            // Si start et end sont présents et non null, le jour est activé
+            const hasTimes = dayData.start && dayData.end && dayData.start !== null && dayData.end !== null;
+            defaultSchedule[day] = {
+              enabled: hasTimes,
+              start: dayData.start || '',
+              end: dayData.end || '',
+            };
+          }
+        }
+        // Si dayData n'existe pas, on garde enabled: false (déjà défini dans defaultSchedule)
+      });
+    }
+    
+    setSchedule(defaultSchedule);
+    setScheduleModalVisible(true);
+  }, [selectedStaff]);
+
+  const handleSaveSchedule = useCallback(async () => {
+    if (!selectedStaff) return;
+
+    try {
+      setScheduleSaving(true);
+      // Construire le schedule avec la nouvelle structure (tous les jours avec enabled)
+      const scheduleToSave: Record<string, { enabled: boolean; start: string | null; end: string | null }> = {};
+      Object.keys(schedule).forEach((day) => {
+        const dayData = schedule[day];
+        // Utiliser directement la valeur de enabled depuis l'état
+        const isDayEnabled = dayData.enabled === true;
+        // Garder les heures même si le jour est désactivé (ne pas mettre null)
+        scheduleToSave[day] = {
+          enabled: isDayEnabled,
+          start: dayData.start || null,
+          end: dayData.end || null,
+        };
+      });
+
+      const { error } = await supabase
+        .from('staff_users')
+        .update({
+          work_schedule_enabled: scheduleEnabled,
+          work_schedule: scheduleToSave, // Toujours sauvegarder le schedule, même si désactivé
+        })
+        .eq('id', selectedStaff.id);
+
+      if (error) {
+        console.warn(error);
+        Alert.alert('Erreur', 'Impossible de sauvegarder les horaires.');
+        return;
+      }
+
+      setScheduleModalVisible(false);
+      Alert.alert('Succès', 'Les horaires ont été mis à jour.');
+      await fetchStaffUsers();
+    } finally {
+      setScheduleSaving(false);
+    }
+  }, [selectedStaff, scheduleEnabled, schedule, fetchStaffUsers]);
 
   const handleToggleActive = useCallback(async () => {
     if (!ensureStaffSelected()) return;
@@ -526,30 +624,36 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
         <ScrollView style={styles.scroll} contentContainerStyle={styles.staffContent}>
           <View style={styles.staffHeaderRow}>
             <Text style={styles.sectionTitle}>Équipe</Text>
-            <View style={styles.staffActionsRow}>
-              <TouchableOpacity
-                style={styles.staffActionButton}
-                onPress={() => {
-                  setAddTempPassword(null);
-                  setAddPassword('');
-                  setAddModalVisible(true);
-                }}
-              >
-                <Text style={styles.staffActionText}>Ajouter</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.staffActionButton}
-                onPress={handleResetPassword}
-              >
-                <Text style={styles.staffActionText}>Réinit. mot de passe</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.staffActionButton}
-                onPress={handleToggleActive}
-              >
-                <Text style={styles.staffActionText}>Activer / désactiver</Text>
-              </TouchableOpacity>
-            </View>
+          </View>
+          <View style={styles.staffActionsRow}>
+            <TouchableOpacity
+              style={styles.staffActionButton}
+              onPress={() => {
+                setAddTempPassword(null);
+                setAddPassword('');
+                setAddModalVisible(true);
+              }}
+            >
+              <Text style={styles.staffActionText}>Ajouter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.staffActionButton}
+              onPress={handleResetPassword}
+            >
+              <Text style={styles.staffActionText}>Réinit. mot de passe</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.staffActionButton}
+              onPress={handleToggleActive}
+            >
+              <Text style={styles.staffActionText}>Activer / désactiver</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.staffActionButton}
+              onPress={handleOpenScheduleModal}
+            >
+              <Text style={styles.staffActionText}>Horaires</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.staffSection}>
@@ -919,6 +1023,168 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      <Modal
+        visible={scheduleModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setScheduleModalVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setScheduleModalVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1, justifyContent: 'flex-end' }}
+          >
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <ScrollView 
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={styles.modalTitle}>Horaires de travail</Text>
+                <Text style={styles.modalMeta}>
+                  Configurez les horaires de travail pour {selectedStaff?.username}.
+                </Text>
+
+                <View style={styles.modalSection}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.modalSectionTitle}>Activer les horaires</Text>
+                    <TouchableOpacity
+                      onPress={() => setScheduleEnabled(!scheduleEnabled)}
+                      style={{
+                        width: 50,
+                        height: 30,
+                        borderRadius: 15,
+                        backgroundColor: scheduleEnabled ? colors.accent : '#E5E7EB',
+                        justifyContent: 'center',
+                        paddingHorizontal: 2,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: 13,
+                          backgroundColor: '#FFFFFF',
+                          alignSelf: scheduleEnabled ? 'flex-end' : 'flex-start',
+                        }}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.modalSubText, { marginTop: 8 }]}>
+                    Si activé, l'employé ne pourra se connecter que pendant ses heures de travail.
+                  </Text>
+                </View>
+
+                {scheduleEnabled && (
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Horaires par jour</Text>
+                    {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((day) => {
+                      const dayLabels: Record<string, string> = {
+                        monday: 'Lundi',
+                        tuesday: 'Mardi',
+                        wednesday: 'Mercredi',
+                        thursday: 'Jeudi',
+                        friday: 'Vendredi',
+                        saturday: 'Samedi',
+                        sunday: 'Dimanche',
+                      };
+                      const daySchedule = schedule[day] || { enabled: false, start: '', end: '' };
+                      // S'assurer que enabled est un boolean (vérifier explicitement)
+                      // Lire directement depuis l'état schedule, pas depuis daySchedule qui pourrait être obsolète
+                      const isEnabled = Boolean(schedule[day]?.enabled);
+
+                      return (
+                        <View key={day} style={{ marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <Text style={[styles.modalSectionTitle, { fontSize: 14 }]}>{dayLabels[day]}</Text>
+                            <TouchableOpacity
+                              onPress={() => {
+                                // Lire l'état actuel depuis schedule (état React) pour être sûr d'avoir la bonne valeur
+                                const currentState = schedule[day];
+                                const currentEnabled = Boolean(currentState?.enabled);
+                                const newEnabled = !currentEnabled;
+                                setSchedule({
+                                  ...schedule,
+                                  [day]: {
+                                    enabled: newEnabled,
+                                    start: newEnabled ? (currentState?.start || '09:00') : (currentState?.start || ''),
+                                    end: newEnabled ? (currentState?.end || '17:00') : (currentState?.end || ''),
+                                  },
+                                });
+                              }}
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                backgroundColor: isEnabled ? '#DCFCE7' : '#FEE2E2',
+                                borderRadius: 8,
+                              }}
+                            >
+                              <Text style={{ color: isEnabled ? '#15803D' : '#B91C1C', fontSize: 12, fontWeight: '600' }}>
+                                {isEnabled ? 'Activer' : 'Désactiver'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                          {isEnabled && (
+                            <View style={{ flexDirection: 'row', gap: 12 }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.modalSubText, { marginBottom: 4 }]}>Début</Text>
+                                <TextInput
+                                  value={daySchedule.start}
+                                  onChangeText={(text) => {
+                                    setSchedule({
+                                      ...schedule,
+                                      [day]: { ...daySchedule, start: text },
+                                    });
+                                  }}
+                                  placeholder="09:00"
+                                  placeholderTextColor={colors.muted}
+                                  style={styles.searchInput}
+                                />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.modalSubText, { marginBottom: 4 }]}>Fin</Text>
+                                <TextInput
+                                  value={daySchedule.end}
+                                  onChangeText={(text) => {
+                                    setSchedule({
+                                      ...schedule,
+                                      [day]: { ...daySchedule, end: text },
+                                    });
+                                  }}
+                                  placeholder="17:00"
+                                  placeholderTextColor={colors.muted}
+                                  style={styles.searchInput}
+                                />
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.modalCloseButton, scheduleSaving && { opacity: 0.6 }]}
+                  onPress={handleSaveSchedule}
+                  disabled={scheduleSaving}
+                >
+                  <Text style={styles.modalCloseText}>
+                    {scheduleSaving ? 'Sauvegarde…' : 'Sauvegarder'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalCloseButton, { backgroundColor: '#E5E7EB', marginTop: 8 }]}
+                  onPress={() => setScheduleModalVisible(false)}
+                >
+                  <Text style={[styles.modalCloseText, { color: colors.dark }]}>Annuler</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1169,14 +1435,13 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   staffHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 12,
   },
   staffActionsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
+    marginBottom: 16,
   },
   staffActionButton: {
     borderRadius: 999,

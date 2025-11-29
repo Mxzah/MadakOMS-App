@@ -3,6 +3,7 @@
  */
 
 type DaySchedule = {
+  enabled?: boolean; // Si présent, indique si le jour est activé
   start: string | null; // Format "HH:MM"
   end: string | null; // Format "HH:MM"
 };
@@ -55,9 +56,25 @@ export function isWithinWorkHours(workSchedule: WorkSchedule | null | undefined)
     return false;
   }
 
-  // Si start ou end sont null ou absents, on considère que c'est un jour non travaillé
-  if (!daySchedule.start || !daySchedule.end) {
-    return false;
+  // Vérifier le champ enabled (nouvelle structure)
+  if (typeof daySchedule.enabled === 'boolean') {
+    // Si enabled est explicitement false, le jour est désactivé
+    if (daySchedule.enabled === false) {
+      return false;
+    }
+    // Si enabled est true, on vérifie les heures
+    if (daySchedule.enabled === true) {
+      // Si start ou end sont null ou absents, on considère que c'est un jour non travaillé
+      if (!daySchedule.start || !daySchedule.end) {
+        return false;
+      }
+    }
+  } else {
+    // Rétrocompatibilité : si enabled n'existe pas, on vérifie si start/end sont présents
+    // Si start ou end sont null ou absents, on considère que c'est un jour non travaillé
+    if (!daySchedule.start || !daySchedule.end) {
+      return false;
+    }
   }
 
   // Parser les heures de début et fin
@@ -100,7 +117,11 @@ export function getWorkScheduleMessage(workSchedule: WorkSchedule | null | undef
 
   (Object.keys(workSchedule) as Array<keyof WorkSchedule>).forEach((day) => {
     const schedule = workSchedule[day];
-    if (schedule?.start && schedule?.end) {
+    // Vérifier si le jour est activé (nouvelle structure avec enabled)
+    const isDayEnabled = typeof schedule?.enabled === 'boolean' 
+      ? schedule.enabled === true 
+      : schedule?.start && schedule?.end; // Rétrocompatibilité
+    if (isDayEnabled && schedule?.start && schedule?.end) {
       activeDays.push(`${dayLabels[day]}: ${schedule.start} - ${schedule.end}`);
     }
   });
