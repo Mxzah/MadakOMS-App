@@ -21,6 +21,7 @@ import { DeliveryView } from './src/screens/DeliveryView';
 import { KitchenView } from './src/screens/KitchenView';
 import { RoleId, StaffSession } from './src/types/staff';
 import { extractRestaurantName } from './src/utils/orderHelpers';
+import { isWithinWorkHours, getWorkScheduleMessage } from './src/utils/workScheduleHelpers';
 
 const colors = {
   background: '#F5F6FB',
@@ -56,11 +57,17 @@ export default function App() {
   const [screen, setScreen] = useState<'login' | 'kitchen' | 'delivery'>('login');
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [hydrating, setHydrating] = useState(true);
+  const [workScheduleData, setWorkScheduleData] = useState<{
+    enabled: boolean;
+    schedule: any;
+    timezone: string;
+    role: string;
+  } | null>(null);
 
   const fetchStaffProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('staff_users')
-      .select('id,role,is_active,restaurant_id,restaurant:restaurants(name)')
+      .select('id,role,is_active,restaurant_id,work_schedule_enabled,work_schedule,restaurant:restaurants(name,timezone)')
       .eq('auth_user_id', userId)
       .maybeSingle();
 
@@ -74,6 +81,19 @@ export default function App() {
 
     if (!data.is_active) {
       throw new Error('Ce compte est désactivé. Contactez un gestionnaire.');
+    }
+
+    // Vérifier les horaires de travail si activés
+    // Les managers peuvent toujours se connecter
+    if (data.work_schedule_enabled && data.role !== 'manager') {
+      const withinHours = isWithinWorkHours(data.work_schedule);
+      
+      if (!withinHours) {
+        const scheduleMessage = getWorkScheduleMessage(data.work_schedule);
+        throw new Error(
+          `Vous ne pouvez vous connecter que pendant vos heures de travail.\n\n${scheduleMessage}`
+        );
+      }
     }
 
     return data;
@@ -111,16 +131,26 @@ export default function App() {
       if (staffRecord.role !== selectedRole) {
         await supabase.auth.signOut();
         throw new Error(
-          `Ce compte correspond à l’équipe “${getRoleLabel(
+          `Ce compte correspond à l'équipe "${getRoleLabel(
             staffRecord.role
-          )}”. Sélectionnez cet onglet pour vous connecter.`
+          )}". Sélectionnez cet onglet pour vous connecter.`
         );
       }
+
+      const restaurant = staffRecord.restaurant as any;
+
+      // Stocker les informations d'horaire pour la vérification périodique
+      setWorkScheduleData({
+        enabled: staffRecord.work_schedule_enabled || false,
+        schedule: staffRecord.work_schedule,
+        timezone: 'local-device',
+        role: staffRecord.role,
+      });
 
       setStaffSession({
         role: staffRecord.role as RoleId,
         restaurantId: staffRecord.restaurant_id,
-        restaurantName: extractRestaurantName(staffRecord.restaurant),
+        restaurantName: extractRestaurantName(restaurant),
         staffUserId: staffRecord.id,
       });
       setScreen(staffRecord.role === 'delivery' ? 'delivery' : 'kitchen');
@@ -140,6 +170,7 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
     setStaffSession(null);
+    setWorkScheduleData(null);
     setScreen('login');
     setPassword('');
     setUsername('');
@@ -159,10 +190,20 @@ export default function App() {
           if (!isMounted) {
             return;
           }
+          const restaurant = staffRecord.restaurant as any;
+
+          // Stocker les informations d'horaire pour la vérification périodique
+          setWorkScheduleData({
+            enabled: staffRecord.work_schedule_enabled || false,
+            schedule: staffRecord.work_schedule,
+            timezone: 'local-device',
+            role: staffRecord.role,
+          });
+
           setStaffSession({
             role: staffRecord.role as RoleId,
             restaurantId: staffRecord.restaurant_id,
-            restaurantName: extractRestaurantName(staffRecord.restaurant),
+            restaurantName: extractRestaurantName(restaurant),
             staffUserId: staffRecord.id,
           });
           setSelectedRole(staffRecord.role as RoleId);
@@ -182,6 +223,7 @@ export default function App() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         setStaffSession(null);
+        setWorkScheduleData(null);
         setScreen('login');
       }
     });
@@ -191,6 +233,42 @@ export default function App() {
       authListener?.subscription.unsubscribe();
     };
   }, [fetchStaffProfile]);
+
+  // Vérification périodique des horaires de travail pendant la session
+  useEffect(() => {
+    if (!staffSession || !workScheduleData) {
+      return;
+    }
+
+    // Les managers peuvent toujours rester connectés
+    if (workScheduleData.role === 'manager') {
+      return;
+    }
+
+    // Si les horaires ne sont pas activés, pas de vérification
+    if (!workScheduleData.enabled) {
+      return;
+    }
+
+    // Vérifier régulièrement si l'employé est toujours dans ses heures
+    const checkInterval = setInterval(async () => {
+      const withinHours = isWithinWorkHours(workScheduleData.schedule);
+
+      if (!withinHours) {
+        // Déconnecter l'utilisateur si hors des heures de travail
+        const scheduleMessage = getWorkScheduleMessage(workScheduleData.schedule);
+        setFeedback({
+          type: 'error',
+          message: `Vos heures de travail sont terminées. Vous avez été déconnecté.\n\n${scheduleMessage}`,
+        });
+        await handleLogout();
+      }
+    }, 15000); // Vérifier environ toutes les 15 secondes
+
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [staffSession, workScheduleData, handleLogout]);
 
   let content: ReactNode;
 

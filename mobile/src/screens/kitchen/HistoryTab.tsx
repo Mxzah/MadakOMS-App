@@ -47,7 +47,6 @@ export function HistoryTab({
   const [history, setHistory] = useState<HistoryOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<'today' | '7d'>('today');
   const [search, setSearch] = useState('');
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -148,10 +147,10 @@ export function HistoryTab({
   }, [fetchHistory]);
 
   const filteredHistory = useMemo(() => {
-    const cutoff =
-      filter === 'today'
-        ? new Date(new Date().setHours(0, 0, 0, 0)).getTime()
-        : Date.now() - 7 * 24 * 60 * 60 * 1000;
+    // Ne montrer que les commandes de la journée actuelle (depuis minuit)
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const cutoff = startOfToday.getTime();
 
     return history.filter((order) => {
       const updated = new Date(order.updatedAt).getTime();
@@ -161,7 +160,7 @@ export function HistoryTab({
         : true;
       return matchesDate && matchesSearch;
     });
-  }, [filter, history, search]);
+  }, [history, search]);
 
   const openDetail = useCallback(
     async (entryId: string) => {
@@ -191,41 +190,6 @@ export function HistoryTab({
 
   return (
     <View style={styles.flex}>
-      <View style={styles.historyFilterRow}>
-        <TouchableOpacity
-          style={[
-            styles.filterPill,
-            { backgroundColor: filter === 'today' ? theme.pillActiveBg : theme.surfaceMuted },
-          ]}
-          onPress={() => setFilter('today')}
-        >
-          <Text
-            style={[
-              styles.filterPillText,
-              { color: filter === 'today' ? theme.pillActiveText : theme.textSecondary },
-            ]}
-          >
-            Aujourd’hui
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterPill,
-            { backgroundColor: filter === '7d' ? theme.pillActiveBg : theme.surfaceMuted },
-          ]}
-          onPress={() => setFilter('7d')}
-        >
-          <Text
-            style={[
-              styles.filterPillText,
-              { color: filter === '7d' ? theme.pillActiveText : theme.textSecondary },
-            ]}
-          >
-            7 derniers jours
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.searchRow}>
         <TextInput
           value={search}

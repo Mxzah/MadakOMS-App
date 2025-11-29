@@ -82,7 +82,7 @@ export function OrdersTab({
     } finally {
       setLoading(false);
     }
-  }, [restaurantId]);
+  }, [restaurantId, staffRole]);
 
   const playNotification = useCallback(async () => {
     try {
