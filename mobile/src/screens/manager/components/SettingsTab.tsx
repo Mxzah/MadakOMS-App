@@ -3,6 +3,9 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, S
 import { colors } from '../../kitchen/constants';
 import type { OrderingSettings, RestaurantInfo } from '../types';
 import { useDeliveryZones } from '../hooks/useDeliveryZones';
+import { useDeliveryFeeRules, type DeliveryFeeRules, type PeakHour, type MinimumOrderSurcharge } from '../hooks/useDeliveryFeeRules';
+import { usePaymentSettings, type PaymentMethod } from '../hooks/usePaymentSettings';
+import { useRestaurantHours, type RestaurantHours, type DayHours } from '../hooks/useRestaurantHours';
 import { styles } from '../styles';
 
 type SettingsTabProps = {
@@ -149,10 +152,49 @@ export function SettingsTab({
     saveDeliveryZones,
   } = useDeliveryZones(restaurantId);
 
+  const {
+    deliveryFeeRules,
+    loading: deliveryFeeRulesLoading,
+    saving: savingDeliveryFeeRules,
+    saveDeliveryFeeRules,
+  } = useDeliveryFeeRules(restaurantId);
+
+  const {
+    paymentSettings,
+    loading: paymentSettingsLoading,
+    saving: savingPaymentSettings,
+    setPaymentSettings,
+    savePaymentSettings,
+  } = usePaymentSettings(restaurantId);
+
+  const {
+    restaurantHours,
+    loading: restaurantHoursLoading,
+    saving: savingRestaurantHours,
+    setRestaurantHours,
+    saveRestaurantHours,
+  } = useRestaurantHours(restaurantId);
+
+  const [localPaymentSettings, setLocalPaymentSettings] = useState<typeof paymentSettings>(paymentSettings);
+  const [localRestaurantHours, setLocalRestaurantHours] = useState<RestaurantHours>(restaurantHours);
+
   const [localDeliveryZoneSettings, setLocalDeliveryZoneSettings] = useState({
     deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
   });
   const [deliveryZonesGeojsonError, setDeliveryZonesGeojsonError] = useState<string | undefined>(undefined);
+
+  const [localDeliveryFeeRules, setLocalDeliveryFeeRules] = useState<DeliveryFeeRules | null>(null);
+  
+  // États locaux pour les valeurs textuelles des champs numériques (pour permettre la saisie de '.' sans suppression)
+  const [baseFeeText, setBaseFeeText] = useState('');
+  const [perKmFeeText, setPerKmFeeText] = useState('');
+  const [maxDistanceKmText, setMaxDistanceKmText] = useState('');
+  const [freeDeliveryAboveText, setFreeDeliveryAboveText] = useState('');
+  const [weekendFeeText, setWeekendFeeText] = useState('');
+  const [holidayFeeText, setHolidayFeeText] = useState('');
+  const [minOrderThresholdText, setMinOrderThresholdText] = useState('');
+  const [minOrderSurchargeText, setMinOrderSurchargeText] = useState('');
+  const [peakHourFeeTexts, setPeakHourFeeTexts] = useState<{ [key: number]: string }>({});
 
   // Update local state when props change
   useEffect(() => {
@@ -168,6 +210,38 @@ export function SettingsTab({
       deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
     });
   }, [deliveryZones]);
+
+  useEffect(() => {
+    setLocalPaymentSettings(paymentSettings);
+  }, [paymentSettings]);
+
+  useEffect(() => {
+    setLocalRestaurantHours(restaurantHours);
+  }, [restaurantHours]);
+
+  useEffect(() => {
+    if (deliveryFeeRules) {
+      setLocalDeliveryFeeRules(deliveryFeeRules);
+      // Initialiser les textes avec les valeurs existantes
+      setBaseFeeText(deliveryFeeRules.baseFee !== undefined && deliveryFeeRules.baseFee !== null ? deliveryFeeRules.baseFee.toString() : '');
+      setPerKmFeeText(deliveryFeeRules.perKmFee !== undefined && deliveryFeeRules.perKmFee !== null ? deliveryFeeRules.perKmFee.toString() : '');
+      setMaxDistanceKmText(deliveryFeeRules.maxDistanceKm !== undefined && deliveryFeeRules.maxDistanceKm !== null ? deliveryFeeRules.maxDistanceKm.toString() : '');
+      setFreeDeliveryAboveText(deliveryFeeRules.freeDeliveryAbove !== undefined && deliveryFeeRules.freeDeliveryAbove !== null ? deliveryFeeRules.freeDeliveryAbove.toString() : '');
+      setWeekendFeeText(deliveryFeeRules.weekendFee !== undefined && deliveryFeeRules.weekendFee !== null ? deliveryFeeRules.weekendFee.toString() : '');
+      setHolidayFeeText(deliveryFeeRules.holidayFee !== undefined && deliveryFeeRules.holidayFee !== null ? deliveryFeeRules.holidayFee.toString() : '');
+      setMinOrderThresholdText(deliveryFeeRules.minimumOrderSurcharge?.threshold !== undefined && deliveryFeeRules.minimumOrderSurcharge?.threshold !== null ? deliveryFeeRules.minimumOrderSurcharge.threshold.toString() : '');
+      setMinOrderSurchargeText(deliveryFeeRules.minimumOrderSurcharge?.surcharge !== undefined && deliveryFeeRules.minimumOrderSurcharge?.surcharge !== null ? deliveryFeeRules.minimumOrderSurcharge.surcharge.toString() : '');
+      
+      // Initialiser les textes pour les heures de pointe
+      if (deliveryFeeRules.peakHours) {
+        const texts: { [key: number]: string } = {};
+        deliveryFeeRules.peakHours.forEach((ph, idx) => {
+          texts[idx] = ph.additionalFee.toString();
+        });
+        setPeakHourFeeTexts(texts);
+      }
+    }
+  }, [deliveryFeeRules]);
 
   const handleSaveRestaurantInfo = () => {
     // Valider le numéro de téléphone avant de sauvegarder
@@ -295,7 +369,155 @@ export function SettingsTab({
     );
   };
 
-  if (loading || deliveryZonesLoading) {
+  const handleCancelDeliveryFeeRules = () => {
+    if (deliveryFeeRules) {
+      setLocalDeliveryFeeRules(deliveryFeeRules);
+    }
+  };
+
+  const handleSaveDeliveryFeeRules = () => {
+    if (!localDeliveryFeeRules) return;
+
+    Alert.alert(
+      'Confirmer la sauvegarde',
+      'Voulez-vous sauvegarder les modifications des règles de frais de livraison ?',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+        },
+        {
+          text: 'Sauvegarder',
+          style: 'default',
+          onPress: async () => {
+            const success = await saveDeliveryFeeRules(localDeliveryFeeRules);
+            if (!success && deliveryFeeRules) {
+              setLocalDeliveryFeeRules(deliveryFeeRules);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const addPeakHour = () => {
+    if (!localDeliveryFeeRules) return;
+    const newPeakHours = localDeliveryFeeRules.peakHours || [];
+    setLocalDeliveryFeeRules({
+      ...localDeliveryFeeRules,
+      peakHours: [...newPeakHours, { start: '11:00', end: '13:00', additionalFee: 0 }],
+    });
+  };
+
+  const removePeakHour = (index: number) => {
+    if (!localDeliveryFeeRules || !localDeliveryFeeRules.peakHours) return;
+    const newPeakHours = localDeliveryFeeRules.peakHours.filter((_, i) => i !== index);
+    setLocalDeliveryFeeRules({
+      ...localDeliveryFeeRules,
+      peakHours: newPeakHours.length > 0 ? newPeakHours : null,
+    });
+  };
+
+  const updatePeakHour = (index: number, field: keyof PeakHour, value: string | number) => {
+    if (!localDeliveryFeeRules || !localDeliveryFeeRules.peakHours) return;
+    const newPeakHours = [...localDeliveryFeeRules.peakHours];
+    newPeakHours[index] = { ...newPeakHours[index], [field]: value };
+    setLocalDeliveryFeeRules({
+      ...localDeliveryFeeRules,
+      peakHours: newPeakHours,
+    });
+  };
+
+  const handleCancelPaymentSettings = () => {
+    setLocalPaymentSettings(paymentSettings);
+  };
+
+  const handleSavePaymentSettings = () => {
+    Alert.alert(
+      'Confirmer la sauvegarde',
+      'Voulez-vous sauvegarder les modifications des paramètres de paiement ?',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+        },
+        {
+          text: 'Sauvegarder',
+          style: 'default',
+          onPress: async () => {
+            const success = await savePaymentSettings(localPaymentSettings);
+            if (!success) {
+              setLocalPaymentSettings(paymentSettings);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCancelRestaurantHours = () => {
+    setLocalRestaurantHours(restaurantHours);
+  };
+
+  const handleSaveRestaurantHours = () => {
+    Alert.alert(
+      'Confirmer la sauvegarde',
+      'Voulez-vous sauvegarder les modifications des horaires ?',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+        },
+        {
+          text: 'Sauvegarder',
+          style: 'default',
+          onPress: async () => {
+            const success = await saveRestaurantHours(localRestaurantHours);
+            if (!success) {
+              setLocalRestaurantHours(restaurantHours);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const togglePaymentMethod = (service: 'pickup' | 'delivery', method: PaymentMethod) => {
+    const currentMethods = localPaymentSettings[service];
+    const newMethods = currentMethods.includes(method)
+      ? currentMethods.filter((m) => m !== method)
+      : [...currentMethods, method];
+    
+    setLocalPaymentSettings({
+      ...localPaymentSettings,
+      [service]: newMethods,
+    });
+  };
+
+  const toggleDayEnabled = (day: keyof RestaurantHours) => {
+    const dayHours = localRestaurantHours[day];
+    setLocalRestaurantHours({
+      ...localRestaurantHours,
+      [day]: {
+        ...dayHours,
+        enabled: !dayHours.enabled,
+        open: !dayHours.enabled ? (dayHours.open || '09:00') : dayHours.open,
+        close: !dayHours.enabled ? (dayHours.close || '17:00') : dayHours.close,
+      },
+    });
+  };
+
+  const updateDayHours = (day: keyof RestaurantHours, field: 'open' | 'close', value: string) => {
+    setLocalRestaurantHours({
+      ...localRestaurantHours,
+      [day]: {
+        ...localRestaurantHours[day],
+        [field]: value || null,
+      },
+    });
+  };
+
+  if (loading || deliveryZonesLoading || deliveryFeeRulesLoading || paymentSettingsLoading || restaurantHoursLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator color={colors.accent} />
@@ -658,6 +880,742 @@ export function SettingsTab({
           >
             <Text style={styles.modalCloseText}>
               {savingDeliveryZones ? 'Sauvegarde…' : 'Sauvegarder les zones de livraison'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Delivery Fee Rules Section */}
+      {localDeliveryFeeRules && (
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>💰 Règles de frais de livraison</Text>
+
+          {/* Type Selection */}
+          <View style={styles.modalSection}>
+            <Text style={styles.modalSectionTitle}>Type de frais</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={[
+                  { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1 },
+                  localDeliveryFeeRules.type === 'flat'
+                    ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                    : { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' },
+                ]}
+                onPress={() => setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, type: 'flat' })}
+              >
+                <Text
+                  style={[
+                    { textAlign: 'center', fontWeight: '600' },
+                    localDeliveryFeeRules.type === 'flat' ? { color: '#FFFFFF' } : { color: '#374151' },
+                  ]}
+                >
+                  Frais fixe
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1 },
+                  localDeliveryFeeRules.type === 'distance_based'
+                    ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                    : { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' },
+                ]}
+                onPress={() => setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, type: 'distance_based' })}
+              >
+                <Text
+                  style={[
+                    { textAlign: 'center', fontWeight: '600' },
+                    localDeliveryFeeRules.type === 'distance_based' ? { color: '#FFFFFF' } : { color: '#374151' },
+                  ]}
+                >
+                  Basé sur distance
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Base Fee */}
+          <View style={styles.modalSection}>
+            <Text style={styles.modalSectionTitle}>Frais de base ($)</Text>
+            <TextInput
+              value={baseFeeText}
+              onChangeText={(text) => {
+                // Permettre la saisie de '.' et garder le texte tel quel
+                const normalized = text.replace(',', '.');
+                setBaseFeeText(normalized);
+                // Convertir en nombre seulement si c'est un nombre valide
+                if (normalized === '' || normalized === '.') {
+                  setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, baseFee: 0 });
+                } else {
+                  const num = parseFloat(normalized);
+                  if (!isNaN(num)) {
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, baseFee: num });
+                  }
+                }
+              }}
+              onBlur={() => {
+                // À la perte de focus, nettoyer si juste un point
+                if (baseFeeText === '.') {
+                  setBaseFeeText('0');
+                  setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, baseFee: 0 });
+                } else if (baseFeeText === '') {
+                  setBaseFeeText('0');
+                  setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, baseFee: 0 });
+                }
+              }}
+              placeholder="3.99"
+              placeholderTextColor={colors.muted}
+              style={styles.searchInput}
+              keyboardType="decimal-pad"
+            />
+          </View>
+
+          {/* Distance-Based Options */}
+          {localDeliveryFeeRules.type === 'distance_based' && (
+            <>
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Frais par km ($)</Text>
+                <TextInput
+                  value={perKmFeeText}
+                  onChangeText={(text) => {
+                    const normalized = text.replace(',', '.');
+                    setPerKmFeeText(normalized);
+                    if (normalized === '' || normalized === '.') {
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, perKmFee: null });
+                    } else {
+                      const num = parseFloat(normalized);
+                      if (!isNaN(num)) {
+                        setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, perKmFee: num });
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    if (perKmFeeText === '.') {
+                      setPerKmFeeText('');
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, perKmFee: null });
+                    }
+                  }}
+                  placeholder="0.50"
+                  placeholderTextColor={colors.muted}
+                  style={styles.searchInput}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Distance maximale (km)</Text>
+                <TextInput
+                  value={maxDistanceKmText}
+                  onChangeText={(text) => {
+                    const normalized = text.replace(',', '.');
+                    setMaxDistanceKmText(normalized);
+                    if (normalized === '' || normalized === '.') {
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, maxDistanceKm: null });
+                    } else {
+                      const num = parseFloat(normalized);
+                      if (!isNaN(num)) {
+                        setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, maxDistanceKm: num });
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    if (maxDistanceKmText === '.') {
+                      setMaxDistanceKmText('');
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, maxDistanceKm: null });
+                    }
+                  }}
+                  placeholder="7"
+                  placeholderTextColor={colors.muted}
+                  style={styles.searchInput}
+                  keyboardType="numeric"
+                />
+              </View>
+            </>
+          )}
+
+          {/* Free Delivery Above */}
+          <View style={styles.modalSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.modalSectionTitle}>Livraison gratuite au-dessus de ($)</Text>
+              <Switch
+                value={localDeliveryFeeRules.freeDeliveryAbove !== null}
+                onValueChange={(enabled) => {
+                  setLocalDeliveryFeeRules({
+                    ...localDeliveryFeeRules,
+                    freeDeliveryAbove: enabled ? 30 : null,
+                  });
+                }}
+                trackColor={{ false: '#E5E7EB', true: colors.accent }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {localDeliveryFeeRules.freeDeliveryAbove !== null && (
+              <TextInput
+                value={freeDeliveryAboveText}
+                onChangeText={(text) => {
+                  const normalized = text.replace(',', '.');
+                  setFreeDeliveryAboveText(normalized);
+                  if (normalized === '' || normalized === '.') {
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, freeDeliveryAbove: 0 });
+                  } else {
+                    const num = parseFloat(normalized);
+                    if (!isNaN(num)) {
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, freeDeliveryAbove: num });
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  if (freeDeliveryAboveText === '.') {
+                    setFreeDeliveryAboveText('0');
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, freeDeliveryAbove: 0 });
+                  } else if (freeDeliveryAboveText === '') {
+                    setFreeDeliveryAboveText('0');
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, freeDeliveryAbove: 0 });
+                  }
+                }}
+                placeholder="30"
+                placeholderTextColor={colors.muted}
+                style={[styles.searchInput, { marginTop: 8 }]}
+                keyboardType="decimal-pad"
+              />
+            )}
+          </View>
+
+          {/* Peak Hours */}
+          <View style={styles.modalSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={styles.modalSectionTitle}>Frais d'heures de pointe</Text>
+              <TouchableOpacity
+                onPress={addPeakHour}
+                style={{ padding: 8, backgroundColor: colors.accent, borderRadius: 6 }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600' }}>+ Ajouter</Text>
+              </TouchableOpacity>
+            </View>
+            {localDeliveryFeeRules.peakHours && localDeliveryFeeRules.peakHours.length > 0 && (
+              <View style={{ gap: 12 }}>
+                {localDeliveryFeeRules.peakHours.map((peakHour, index) => (
+                  <View key={index} style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={{ fontWeight: '600', color: '#374151' }}>Période {index + 1}</Text>
+                      <TouchableOpacity
+                        onPress={() => removePeakHour(index)}
+                        style={{ padding: 4 }}
+                      >
+                        <Text style={{ color: '#EF4444', fontSize: 12 }}>Supprimer</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Début (HH:MM)</Text>
+                        <TextInput
+                          value={peakHour.start}
+                          onChangeText={(text) => updatePeakHour(index, 'start', text)}
+                          placeholder="11:00"
+                          placeholderTextColor={colors.muted}
+                          style={styles.searchInput}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Fin (HH:MM)</Text>
+                        <TextInput
+                          value={peakHour.end}
+                          onChangeText={(text) => updatePeakHour(index, 'end', text)}
+                          placeholder="13:00"
+                          placeholderTextColor={colors.muted}
+                          style={styles.searchInput}
+                        />
+                      </View>
+                    </View>
+                    <View>
+                      <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Frais supplémentaire ($)</Text>
+                      <TextInput
+                        value={peakHourFeeTexts[index] || peakHour.additionalFee.toString()}
+                        onChangeText={(text) => {
+                          const normalized = text.replace(',', '.');
+                          setPeakHourFeeTexts({ ...peakHourFeeTexts, [index]: normalized });
+                          if (normalized === '' || normalized === '.') {
+                            updatePeakHour(index, 'additionalFee', 0);
+                          } else {
+                            const num = parseFloat(normalized);
+                            if (!isNaN(num)) {
+                              updatePeakHour(index, 'additionalFee', num);
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (peakHourFeeTexts[index] === '.') {
+                            setPeakHourFeeTexts({ ...peakHourFeeTexts, [index]: '0' });
+                            updatePeakHour(index, 'additionalFee', 0);
+                          }
+                        }}
+                        placeholder="1.00"
+                        placeholderTextColor={colors.muted}
+                        style={styles.searchInput}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Weekend Fee */}
+          <View style={styles.modalSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.modalSectionTitle}>Frais de fin de semaine ($)</Text>
+              <Switch
+                value={localDeliveryFeeRules.weekendFee !== null}
+                onValueChange={(enabled) => {
+                  setLocalDeliveryFeeRules({
+                    ...localDeliveryFeeRules,
+                    weekendFee: enabled ? 5 : null,
+                  });
+                }}
+                trackColor={{ false: '#E5E7EB', true: colors.accent }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {localDeliveryFeeRules.weekendFee !== null && (
+              <TextInput
+                value={weekendFeeText}
+                onChangeText={(text) => {
+                  const normalized = text.replace(',', '.');
+                  setWeekendFeeText(normalized);
+                  if (normalized === '' || normalized === '.') {
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, weekendFee: 0 });
+                  } else {
+                    const num = parseFloat(normalized);
+                    if (!isNaN(num)) {
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, weekendFee: num });
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  if (weekendFeeText === '.') {
+                    setWeekendFeeText('0');
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, weekendFee: 0 });
+                  } else if (weekendFeeText === '') {
+                    setWeekendFeeText('0');
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, weekendFee: 0 });
+                  }
+                }}
+                placeholder="5.00"
+                placeholderTextColor={colors.muted}
+                style={[styles.searchInput, { marginTop: 8 }]}
+                keyboardType="decimal-pad"
+              />
+            )}
+          </View>
+
+          {/* Holiday Fee */}
+          <View style={styles.modalSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.modalSectionTitle}>Frais de jour férié ($)</Text>
+              <Switch
+                value={localDeliveryFeeRules.holidayFee !== null}
+                onValueChange={(enabled) => {
+                  setLocalDeliveryFeeRules({
+                    ...localDeliveryFeeRules,
+                    holidayFee: enabled ? 5 : null,
+                  });
+                }}
+                trackColor={{ false: '#E5E7EB', true: colors.accent }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {localDeliveryFeeRules.holidayFee !== null && (
+              <TextInput
+                value={holidayFeeText}
+                onChangeText={(text) => {
+                  const normalized = text.replace(',', '.');
+                  setHolidayFeeText(normalized);
+                  if (normalized === '' || normalized === '.') {
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, holidayFee: 0 });
+                  } else {
+                    const num = parseFloat(normalized);
+                    if (!isNaN(num)) {
+                      setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, holidayFee: num });
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  if (holidayFeeText === '.') {
+                    setHolidayFeeText('0');
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, holidayFee: 0 });
+                  } else if (holidayFeeText === '') {
+                    setHolidayFeeText('0');
+                    setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, holidayFee: 0 });
+                  }
+                }}
+                placeholder="5.00"
+                placeholderTextColor={colors.muted}
+                style={[styles.searchInput, { marginTop: 8 }]}
+                keyboardType="decimal-pad"
+              />
+            )}
+          </View>
+
+          {/* Minimum Order Surcharge */}
+          <View style={styles.modalSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.modalSectionTitle}>Surcharge commande minimale</Text>
+              <Switch
+                value={localDeliveryFeeRules.minimumOrderSurcharge !== null}
+                onValueChange={(enabled) => {
+                  setLocalDeliveryFeeRules({
+                    ...localDeliveryFeeRules,
+                    minimumOrderSurcharge: enabled ? { threshold: 15, surcharge: 2 } : null,
+                  });
+                }}
+                trackColor={{ false: '#E5E7EB', true: colors.accent }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {localDeliveryFeeRules.minimumOrderSurcharge !== null && (
+              <View style={{ marginTop: 8, gap: 8 }}>
+                <View>
+                  <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Seuil ($)</Text>
+                    <TextInput
+                      value={minOrderThresholdText}
+                      onChangeText={(text) => {
+                        const normalized = text.replace(',', '.');
+                        setMinOrderThresholdText(normalized);
+                        if (normalized === '' || normalized === '.') {
+                          setLocalDeliveryFeeRules({
+                            ...localDeliveryFeeRules,
+                            minimumOrderSurcharge: {
+                              ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                              threshold: 0,
+                            },
+                          });
+                        } else {
+                          const num = parseFloat(normalized);
+                          if (!isNaN(num)) {
+                            setLocalDeliveryFeeRules({
+                              ...localDeliveryFeeRules,
+                              minimumOrderSurcharge: {
+                                ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                                threshold: num,
+                              },
+                            });
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        if (minOrderThresholdText === '.') {
+                          setMinOrderThresholdText('0');
+                          setLocalDeliveryFeeRules({
+                            ...localDeliveryFeeRules,
+                            minimumOrderSurcharge: {
+                              ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                              threshold: 0,
+                            },
+                          });
+                        } else if (minOrderThresholdText === '') {
+                          setMinOrderThresholdText('0');
+                          setLocalDeliveryFeeRules({
+                            ...localDeliveryFeeRules,
+                            minimumOrderSurcharge: {
+                              ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                              threshold: 0,
+                            },
+                          });
+                        }
+                      }}
+                      placeholder="15"
+                      placeholderTextColor={colors.muted}
+                      style={styles.searchInput}
+                      keyboardType="decimal-pad"
+                    />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Surcharge ($)</Text>
+                    <TextInput
+                      value={minOrderSurchargeText}
+                      onChangeText={(text) => {
+                        const normalized = text.replace(',', '.');
+                        setMinOrderSurchargeText(normalized);
+                        if (normalized === '' || normalized === '.') {
+                          setLocalDeliveryFeeRules({
+                            ...localDeliveryFeeRules,
+                            minimumOrderSurcharge: {
+                              ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                              surcharge: 0,
+                            },
+                          });
+                        } else {
+                          const num = parseFloat(normalized);
+                          if (!isNaN(num)) {
+                            setLocalDeliveryFeeRules({
+                              ...localDeliveryFeeRules,
+                              minimumOrderSurcharge: {
+                                ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                                surcharge: num,
+                              },
+                            });
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        if (minOrderSurchargeText === '.') {
+                          setMinOrderSurchargeText('0');
+                          setLocalDeliveryFeeRules({
+                            ...localDeliveryFeeRules,
+                            minimumOrderSurcharge: {
+                              ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                              surcharge: 0,
+                            },
+                          });
+                        } else if (minOrderSurchargeText === '') {
+                          setMinOrderSurchargeText('0');
+                          setLocalDeliveryFeeRules({
+                            ...localDeliveryFeeRules,
+                            minimumOrderSurcharge: {
+                              ...localDeliveryFeeRules.minimumOrderSurcharge!,
+                              surcharge: 0,
+                            },
+                          });
+                        }
+                      }}
+                      placeholder="2.00"
+                      placeholderTextColor={colors.muted}
+                      style={styles.searchInput}
+                      keyboardType="decimal-pad"
+                    />
+                </View>
+              </View>
+            )}
+          </View>
+
+          <View style={{ gap: 12 }}>
+            <TouchableOpacity
+              style={[
+                styles.modalCloseButton,
+                { backgroundColor: '#E5E7EB' },
+                (saving || savingDeliveryFeeRules) && { opacity: 0.6 },
+              ]}
+              onPress={handleCancelDeliveryFeeRules}
+              disabled={saving || savingDeliveryFeeRules}
+            >
+              <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+                Annuler les changements
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalCloseButton, (saving || savingDeliveryFeeRules) && { opacity: 0.6 }]}
+              onPress={handleSaveDeliveryFeeRules}
+              disabled={saving || savingDeliveryFeeRules}
+            >
+              <Text style={styles.modalCloseText}>
+                {savingDeliveryFeeRules ? 'Sauvegarde…' : 'Sauvegarder les règles de frais'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Payment Settings Section */}
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionTitle}>💳 Paiements</Text>
+
+        {/* Pickup Payment Methods */}
+        <View style={styles.modalSection}>
+          <Text style={styles.modalSectionTitle}>À emporter</Text>
+          <View style={{ gap: 12 }}>
+            {(['cash', 'card_terminal', 'card_online'] as PaymentMethod[]).map((method) => {
+              const isSelected = localPaymentSettings.pickup.includes(method);
+              const methodLabels: Record<PaymentMethod, string> = {
+                cash: 'Espèces',
+                card_terminal: 'Terminal',
+                card_online: 'En ligne',
+              };
+              return (
+                <TouchableOpacity
+                  key={method}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: isSelected ? colors.accent : '#E5E7EB',
+                    backgroundColor: isSelected ? '#F0F9FF' : '#FFFFFF',
+                  }}
+                  onPress={() => togglePaymentMethod('pickup', method)}
+                >
+                  <View
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      borderWidth: 2,
+                      borderColor: isSelected ? colors.accent : '#9CA3AF',
+                      backgroundColor: isSelected ? colors.accent : 'transparent',
+                      marginRight: 12,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {isSelected && <Text style={{ color: '#FFFFFF', fontSize: 12 }}>✓</Text>}
+                  </View>
+                  <Text style={{ fontSize: 16, color: '#374151' }}>{methodLabels[method]}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Delivery Payment Methods */}
+        <View style={styles.modalSection}>
+          <Text style={styles.modalSectionTitle}>Livraison</Text>
+          <View style={{ gap: 12 }}>
+            {(['cash', 'card_terminal', 'card_online'] as PaymentMethod[]).map((method) => {
+              const isSelected = localPaymentSettings.delivery.includes(method);
+              const methodLabels: Record<PaymentMethod, string> = {
+                cash: 'Espèces',
+                card_terminal: 'Terminal',
+                card_online: 'En ligne',
+              };
+              return (
+                <TouchableOpacity
+                  key={method}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: isSelected ? colors.accent : '#E5E7EB',
+                    backgroundColor: isSelected ? '#F0F9FF' : '#FFFFFF',
+                  }}
+                  onPress={() => togglePaymentMethod('delivery', method)}
+                >
+                  <View
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      borderWidth: 2,
+                      borderColor: isSelected ? colors.accent : '#9CA3AF',
+                      backgroundColor: isSelected ? colors.accent : 'transparent',
+                      marginRight: 12,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {isSelected && <Text style={{ color: '#FFFFFF', fontSize: 12 }}>✓</Text>}
+                  </View>
+                  <Text style={{ fontSize: 16, color: '#374151' }}>{methodLabels[method]}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: '#E5E7EB' },
+              (saving || savingPaymentSettings) && { opacity: 0.6 },
+            ]}
+            onPress={handleCancelPaymentSettings}
+            disabled={saving || savingPaymentSettings}
+          >
+            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+              Annuler les changements
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalCloseButton, (saving || savingPaymentSettings) && { opacity: 0.6 }]}
+            onPress={handleSavePaymentSettings}
+            disabled={saving || savingPaymentSettings}
+          >
+            <Text style={styles.modalCloseText}>
+              {savingPaymentSettings ? 'Sauvegarde…' : 'Sauvegarder les paramètres de paiement'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Restaurant Hours Section */}
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionTitle}>⏰ Horaires</Text>
+
+        {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as Array<keyof RestaurantHours>).map((day) => {
+          const dayHours = localRestaurantHours[day];
+          const dayLabels: Record<keyof RestaurantHours, string> = {
+            monday: 'Lundi',
+            tuesday: 'Mardi',
+            wednesday: 'Mercredi',
+            thursday: 'Jeudi',
+            friday: 'Vendredi',
+            saturday: 'Samedi',
+            sunday: 'Dimanche',
+          };
+
+          return (
+            <View key={day} style={[styles.modalSection, { marginBottom: 16 }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={[styles.modalSectionTitle, { marginBottom: 0 }]}>{dayLabels[day]}</Text>
+                <Switch
+                  value={dayHours.enabled}
+                  onValueChange={() => toggleDayEnabled(day)}
+                  trackColor={{ false: '#E5E7EB', true: colors.accent }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              {dayHours.enabled && (
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Ouverture</Text>
+                    <TextInput
+                      value={dayHours.open || ''}
+                      onChangeText={(text) => updateDayHours(day, 'open', text)}
+                      placeholder="09:00"
+                      placeholderTextColor={colors.muted}
+                      style={styles.searchInput}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Fermeture</Text>
+                    <TextInput
+                      value={dayHours.close || ''}
+                      onChangeText={(text) => updateDayHours(day, 'close', text)}
+                      placeholder="17:00"
+                      placeholderTextColor={colors.muted}
+                      style={styles.searchInput}
+                    />
+                  </View>
+                </View>
+              )}
+            </View>
+          );
+        })}
+
+        <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: '#E5E7EB' },
+              (saving || savingRestaurantHours) && { opacity: 0.6 },
+            ]}
+            onPress={handleCancelRestaurantHours}
+            disabled={saving || savingRestaurantHours}
+          >
+            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+              Annuler les changements
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalCloseButton, (saving || savingRestaurantHours) && { opacity: 0.6 }]}
+            onPress={handleSaveRestaurantHours}
+            disabled={saving || savingRestaurantHours}
+          >
+            <Text style={styles.modalCloseText}>
+              {savingRestaurantHours ? 'Sauvegarde…' : 'Sauvegarder les horaires'}
             </Text>
           </TouchableOpacity>
         </View>
