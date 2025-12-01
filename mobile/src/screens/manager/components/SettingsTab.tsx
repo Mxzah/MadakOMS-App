@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { colors } from '../../kitchen/constants';
 import type { OrderingSettings, RestaurantInfo } from '../types';
+import { useDeliveryZones } from '../hooks/useDeliveryZones';
 import { styles } from '../styles';
 
 type SettingsTabProps = {
@@ -9,6 +10,7 @@ type SettingsTabProps = {
   orderingSettings: OrderingSettings;
   loading: boolean;
   saving: boolean;
+  restaurantId: string;
   onUpdateRestaurantInfo: (info: RestaurantInfo) => Promise<boolean>;
   onUpdateOrderingSettings: (settings: OrderingSettings) => Promise<boolean>;
 };
@@ -70,11 +72,65 @@ const validatePhoneNumber = (phone: string | null): { isValid: boolean; error?: 
   };
 };
 
+// Fonction de validation du rayon de livraison
+const validateDeliveryRadius = (radius: string | null): string | undefined => {
+  if (!radius || radius.trim() === '') {
+    return undefined; // Vide est valide (optionnel)
+  }
+
+  const num = parseFloat(radius);
+  if (isNaN(num) || num <= 0) {
+    return 'Le rayon doit être un nombre positif';
+  }
+
+  return undefined;
+};
+
+// Fonction de validation du GeoJSON
+const validateGeoJSON = (geojson: any): string | undefined => {
+  if (!geojson) {
+    return undefined; // Vide est valide (optionnel)
+  }
+
+  if (typeof geojson !== 'object') {
+    return 'Le GeoJSON doit être un objet valide';
+  }
+
+  // Types GeoJSON valides selon la spécification
+  const validTypes = [
+    // Types de géométrie
+    'Point',
+    'LineString',
+    'Polygon',
+    'MultiPoint',
+    'MultiLineString',
+    'MultiPolygon',
+    // Types de collection
+    'Feature',
+    'FeatureCollection',
+    'GeometryCollection',
+  ];
+
+  if (!geojson.type || !validTypes.includes(geojson.type)) {
+    return `Le type GeoJSON doit être l'un des suivants: ${validTypes.join(', ')}`;
+  }
+
+  // Validation basique pour les géométries
+  if (['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon'].includes(geojson.type)) {
+    if (!geojson.coordinates || !Array.isArray(geojson.coordinates)) {
+      return 'Les géométries GeoJSON doivent avoir une propriété "coordinates" de type tableau';
+    }
+  }
+
+  return undefined;
+};
+
 export function SettingsTab({
   restaurantInfo,
   orderingSettings,
   loading,
   saving,
+  restaurantId,
   onUpdateRestaurantInfo,
   onUpdateOrderingSettings,
 }: SettingsTabProps) {
@@ -85,6 +141,19 @@ export function SettingsTab({
   const [phoneError, setPhoneError] = useState<string | undefined>(undefined);
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
 
+  const {
+    deliveryZones,
+    loading: deliveryZonesLoading,
+    saving: savingDeliveryZones,
+    setDeliveryZones,
+    saveDeliveryZones,
+  } = useDeliveryZones(restaurantId);
+
+  const [localDeliveryZoneSettings, setLocalDeliveryZoneSettings] = useState({
+    deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
+  });
+  const [deliveryZonesGeojsonError, setDeliveryZonesGeojsonError] = useState<string | undefined>(undefined);
+
   // Update local state when props change
   useEffect(() => {
     setLocalRestaurantInfo(restaurantInfo);
@@ -93,6 +162,12 @@ export function SettingsTab({
   useEffect(() => {
     setLocalOrderingSettings(orderingSettings);
   }, [orderingSettings]);
+
+  useEffect(() => {
+    setLocalDeliveryZoneSettings({
+      deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
+    });
+  }, [deliveryZones]);
 
   const handleSaveRestaurantInfo = () => {
     // Valider le numéro de téléphone avant de sauvegarder
@@ -164,7 +239,63 @@ export function SettingsTab({
     );
   };
 
-  if (loading) {
+  const handleCancelRestaurantInfo = () => {
+    setLocalRestaurantInfo(restaurantInfo);
+    setPhoneError(undefined);
+    setEmailError(undefined);
+  };
+
+  const handleCancelOrderingSettings = () => {
+    setLocalOrderingSettings(orderingSettings);
+  };
+
+  const handleCancelDeliveryZones = () => {
+    setLocalDeliveryZoneSettings({
+      deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
+    });
+    setDeliveryZonesGeojsonError(undefined);
+  };
+
+  const handleSaveDeliveryZones = () => {
+    // Valider le GeoJSON
+    const geojsonValidation = validateGeoJSON(localDeliveryZoneSettings.deliveryZonesGeoJson);
+    if (geojsonValidation) {
+      Alert.alert('GeoJSON invalide', geojsonValidation);
+      return;
+    }
+
+    Alert.alert(
+      'Confirmer la sauvegarde',
+      'Voulez-vous sauvegarder les modifications des zones de livraison ?',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+        },
+        {
+          text: 'Sauvegarder',
+          style: 'default',
+          onPress: async () => {
+            const success = await saveDeliveryZones({
+              deliveryRadiusKm: deliveryZones.deliveryRadiusKm, // Garder la valeur existante
+              deliveryZonesGeoJson: localDeliveryZoneSettings.deliveryZonesGeoJson,
+            });
+            if (!success) {
+              // Reset to original values on error
+              setLocalDeliveryZoneSettings({
+                deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
+              });
+            } else {
+              // Clear errors on success
+              setDeliveryZonesGeojsonError(undefined);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  if (loading || deliveryZonesLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator color={colors.accent} />
@@ -173,7 +304,16 @@ export function SettingsTab({
   }
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
       {/* Restaurant Info Section */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>⚙️ Restaurant Info</Text>
@@ -303,15 +443,30 @@ export function SettingsTab({
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.modalCloseButton, (saving || savingInfo) && { opacity: 0.6 }]}
-          onPress={handleSaveRestaurantInfo}
-          disabled={saving || savingInfo}
-        >
-          <Text style={styles.modalCloseText}>
-            {savingInfo ? 'Sauvegarde…' : 'Sauvegarder les informations'}
-          </Text>
-        </TouchableOpacity>
+        <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: '#E5E7EB' },
+              (saving || savingInfo) && { opacity: 0.6 },
+            ]}
+            onPress={handleCancelRestaurantInfo}
+            disabled={saving || savingInfo}
+          >
+            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+              Annuler les changements
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalCloseButton, (saving || savingInfo) && { opacity: 0.6 }]}
+            onPress={handleSaveRestaurantInfo}
+            disabled={saving || savingInfo}
+          >
+            <Text style={styles.modalCloseText}>
+              {savingInfo ? 'Sauvegarde…' : 'Sauvegarder les informations'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Ordering Settings Section */}
@@ -414,17 +569,101 @@ export function SettingsTab({
           />
         </View>
 
-        <TouchableOpacity
-          style={[styles.modalCloseButton, (saving || savingSettings) && { opacity: 0.6 }]}
-          onPress={handleSaveOrderingSettings}
-          disabled={saving || savingSettings}
-        >
-          <Text style={styles.modalCloseText}>
-            {savingSettings ? 'Sauvegarde…' : 'Sauvegarder les paramètres'}
-          </Text>
-        </TouchableOpacity>
+        <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: '#E5E7EB' },
+              (saving || savingSettings) && { opacity: 0.6 },
+            ]}
+            onPress={handleCancelOrderingSettings}
+            disabled={saving || savingSettings}
+          >
+            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+              Annuler les changements
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalCloseButton, (saving || savingSettings) && { opacity: 0.6 }]}
+            onPress={handleSaveOrderingSettings}
+            disabled={saving || savingSettings}
+          >
+            <Text style={styles.modalCloseText}>
+              {savingSettings ? 'Sauvegarde…' : 'Sauvegarder les paramètres'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </ScrollView>
+
+      {/* Delivery Zones Section */}
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionTitle}>📍 Zones de livraison</Text>
+
+        <View style={styles.modalSection}>
+          <Text style={styles.modalSectionTitle}>Zones GeoJSON</Text>
+          <TextInput
+            value={localDeliveryZoneSettings.deliveryZonesGeoJson ? JSON.stringify(localDeliveryZoneSettings.deliveryZonesGeoJson, null, 2) : ''}
+            onChangeText={(text) => {
+              try {
+                const json = text ? JSON.parse(text) : null;
+                setLocalDeliveryZoneSettings({ ...localDeliveryZoneSettings, deliveryZonesGeoJson: json });
+                setDeliveryZonesGeojsonError(validateGeoJSON(json));
+              } catch (e) {
+                setLocalDeliveryZoneSettings({ ...localDeliveryZoneSettings, deliveryZonesGeoJson: null });
+                setDeliveryZonesGeojsonError('JSON invalide');
+              }
+            }}
+            placeholder="Entrez le GeoJSON ici..."
+            placeholderTextColor={colors.muted}
+            style={[
+              styles.searchInput,
+              { height: 120, textAlignVertical: 'top' },
+              deliveryZonesGeojsonError && { borderColor: '#EF4444', borderWidth: 1 },
+            ]}
+            multiline
+          />
+          {deliveryZonesGeojsonError && (
+            <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>
+              {deliveryZonesGeojsonError}
+            </Text>
+          )}
+          {!deliveryZonesGeojsonError && localDeliveryZoneSettings.deliveryZonesGeoJson && (
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>
+              GeoJSON valide
+            </Text>
+          )}
+        </View>
+
+        <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: '#E5E7EB' },
+              (saving || savingDeliveryZones) && { opacity: 0.6 },
+            ]}
+            onPress={handleCancelDeliveryZones}
+            disabled={saving || savingDeliveryZones}
+          >
+            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+              Annuler les changements
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              (saving || savingDeliveryZones) && { opacity: 0.6 },
+            ]}
+            onPress={handleSaveDeliveryZones}
+            disabled={saving || savingDeliveryZones || Boolean(deliveryZonesGeojsonError)}
+          >
+            <Text style={styles.modalCloseText}>
+              {savingDeliveryZones ? 'Sauvegarde…' : 'Sauvegarder les zones de livraison'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

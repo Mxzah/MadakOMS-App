@@ -133,6 +133,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           orderingSettings={orderingSettings}
           loading={settingsLoading}
           saving={settingsSaving}
+          restaurantId={staff.restaurantId}
           onUpdateRestaurantInfo={saveRestaurantInfo}
           onUpdateOrderingSettings={saveOrderingSettings}
         />
