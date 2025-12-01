@@ -19,7 +19,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from './src/lib/supabase';
 import { DeliveryView } from './src/screens/DeliveryView';
 import { KitchenView } from './src/screens/KitchenView';
-import { ManagerView } from './src/screens/ManagerView';
+import { ManagerView } from './src/screens/manager/ManagerView';
 import { RoleId, StaffSession } from './src/types/staff';
 import { extractRestaurantName } from './src/utils/orderHelpers';
 import { isWithinWorkHours, getWorkScheduleMessage } from './src/utils/workScheduleHelpers';

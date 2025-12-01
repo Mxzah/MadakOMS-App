@@ -1,0 +1,319 @@
+import { StyleSheet } from 'react-native';
+import { colors } from '../kitchen/constants';
+
+export const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  subtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    color: colors.muted,
+  },
+  logoutButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#FEE2E2',
+  },
+  logoutText: {
+    color: '#B91C1C',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  filtersRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: '#E5E7EB',
+    borderRadius: 999,
+    padding: 4,
+  },
+  segment: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentSmall: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentActive: {
+    backgroundColor: colors.accent,
+  },
+  segmentText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+  },
+  segmentTextActive: {
+    color: '#FFFFFF',
+  },
+  searchRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    backgroundColor: '#FFFFFF',
+    color: colors.dark,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    gap: 12,
+    paddingBottom: 24,
+  },
+  sectionCard: {
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  sectionCount: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+  },
+  sectionEmpty: {
+    fontSize: 13,
+    color: colors.muted,
+    paddingVertical: 6,
+  },
+  orderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  orderTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  orderMeta: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  orderStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+    marginLeft: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    maxHeight: '80%',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  modalContent: {
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.dark,
+  },
+  modalMeta: {
+    fontSize: 13,
+    color: colors.muted,
+  },
+  modalSection: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  modalSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: colors.dark,
+  },
+  modalText: {
+    fontSize: 14,
+    color: colors.dark,
+  },
+  modalSubText: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  modalItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  modalCloseButton: {
+    marginTop: 12,
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  tabButton: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E5E7EB',
+  },
+  tabButtonActive: {
+    backgroundColor: colors.accent,
+  },
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
+  },
+  staffContent: {
+    padding: 16,
+    gap: 16,
+    paddingBottom: 24,
+  },
+  staffHeaderRow: {
+    marginBottom: 12,
+  },
+  staffActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  staffActionButton: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#FFFFFF',
+  },
+  staffActionText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  staffSection: {
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+    gap: 4,
+  },
+  staffSectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.dark,
+    marginBottom: 4,
+  },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  staffRowSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  staffName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.dark,
+  },
+  staffMeta: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  staffStatusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  staffStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+});
+
