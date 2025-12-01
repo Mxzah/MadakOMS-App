@@ -37,3 +37,24 @@ export type DaySchedule = {
 
 export type WorkSchedule = Record<string, DaySchedule>;
 
+export type RestaurantInfo = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+  country: string | null;
+};
+
+export type OrderingSettings = {
+  orderingEnabled: boolean;
+  pickupEnabled: boolean;
+  deliveryEnabled: boolean;
+  minOrderAmountPickup: number | null;
+  minOrderAmountDelivery: number | null;
+  estimatedPrepTimeMinutes: number | null;
+  estimatedDeliveryTimeMinutes: number | null;
+};

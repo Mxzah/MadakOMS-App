@@ -6,8 +6,10 @@ import { OrderDetailModal } from './components/OrderDetailModal';
 import { OrdersTab } from './components/OrdersTab';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { ScheduleModal } from './components/ScheduleModal';
+import { SettingsTab } from './components/SettingsTab';
 import { StaffTab } from './components/StaffTab';
 import { useOrders } from './hooks/useOrders';
+import { useRestaurantSettings } from './hooks/useRestaurantSettings';
 import { useStaff } from './hooks/useStaff';
 import type { ManagerTabId, ManagerViewProps } from './types';
 import { styles } from './styles';
@@ -41,6 +43,15 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
     ensureStaffSelected,
     handleToggleActive,
   } = useStaff(staff.restaurantId);
+
+  const {
+    restaurantInfo,
+    orderingSettings,
+    loading: settingsLoading,
+    saving: settingsSaving,
+    saveRestaurantInfo,
+    saveOrderingSettings,
+  } = useRestaurantSettings(staff.restaurantId);
 
   useEffect(() => {
     fetchStaffUsers();
@@ -76,7 +87,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
       </View>
 
       <View style={styles.tabBar}>
-        {(['orders', 'staff'] as ManagerTabId[]).map((id) => {
+        {(['orders', 'staff', 'settings'] as ManagerTabId[]).map((id) => {
           const isActive = activeTab === id;
           return (
             <TouchableOpacity
@@ -85,7 +96,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
               onPress={() => setActiveTab(id)}
             >
               <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                {id === 'orders' ? 'Commandes' : 'Équipe'}
+                {id === 'orders' ? 'Commandes' : id === 'staff' ? 'Équipe' : 'Réglages'}
               </Text>
             </TouchableOpacity>
           );
@@ -104,7 +115,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           grouped={grouped}
           onOrderSelect={setSelectedOrder}
         />
-      ) : (
+      ) : activeTab === 'staff' ? (
         <StaffTab
           staffUsers={staffUsers}
           staffLoading={staffLoading}
@@ -115,6 +126,15 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           onResetPassword={handleResetPassword}
           onToggleActive={handleToggleActive}
           onOpenSchedule={handleOpenScheduleModal}
+        />
+      ) : (
+        <SettingsTab
+          restaurantInfo={restaurantInfo}
+          orderingSettings={orderingSettings}
+          loading={settingsLoading}
+          saving={settingsSaving}
+          onUpdateRestaurantInfo={saveRestaurantInfo}
+          onUpdateOrderingSettings={saveOrderingSettings}
         />
       )}
 
