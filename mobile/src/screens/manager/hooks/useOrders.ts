@@ -68,9 +68,18 @@ export function useOrders(restaurantId: string) {
       start = new Date(end);
       start.setDate(start.getDate() - 1);
     } else if (dateFilter === 'week') {
-      end = now;
-      start = new Date(now);
-      start.setDate(start.getDate() - 7);
+      // Calculer le lundi de la semaine en cours (lundi = jour 1, dimanche = jour 0)
+      const dayOfWeek = now.getDay(); // 0 = dimanche, 1 = lundi, ..., 6 = samedi
+      const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Nombre de jours depuis le lundi
+      
+      // Lundi 00:00:00 de la semaine en cours
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      start.setDate(start.getDate() - daysFromMonday);
+      start.setHours(0, 0, 0, 0);
+      
+      // Lundi 00:00:00 de la semaine suivante (exclusif, donc inclut jusqu'à dimanche minuit)
+      end = new Date(start);
+      end.setDate(end.getDate() + 7);
     } else if (dateFilter === 'month') {
       start = new Date(now.getFullYear(), now.getMonth(), 1);
       end = new Date(now.getFullYear(), now.getMonth() + 1, 1);

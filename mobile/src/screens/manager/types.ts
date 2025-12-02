@@ -12,7 +12,7 @@ export type ManagerViewProps = {
 
 export type DateFilterId = 'today' | 'yesterday' | 'week' | 'month';
 export type FulfillmentFilterId = 'all' | 'delivery' | 'pickup';
-export type ManagerTabId = 'orders' | 'staff' | 'settings';
+export type ManagerTabId = 'orders' | 'staff' | 'settings' | 'analytics';
 
 export type StaffUser = {
   id: string;

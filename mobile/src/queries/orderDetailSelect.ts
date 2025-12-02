@@ -7,6 +7,7 @@ export const ORDER_DETAIL_SELECT = `
   scheduled_at,
   pickup_name,
   pickup_phone,
+  delivery_name,
   delivery_address,
   drop_option,
   apartment_suite,

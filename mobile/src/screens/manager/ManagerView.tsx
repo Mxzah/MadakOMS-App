@@ -3,6 +3,7 @@ import { Alert, SafeAreaView, Text, TouchableOpacity, View } from 'react-native'
 import type { KitchenOrder } from '../../types/orders';
 import { AddStaffModal } from './components/AddStaffModal';
 import { OrderDetailModal } from './components/OrderDetailModal';
+import { AnalyticsTab } from './components/AnalyticsTab';
 import { OrdersTab } from './components/OrdersTab';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { ScheduleModal } from './components/ScheduleModal';
@@ -87,7 +88,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
       </View>
 
       <View style={styles.tabBar}>
-        {(['orders', 'staff', 'settings'] as ManagerTabId[]).map((id) => {
+        {(['orders', 'staff', 'settings', 'analytics'] as ManagerTabId[]).map((id) => {
           const isActive = activeTab === id;
           return (
             <TouchableOpacity
@@ -96,7 +97,13 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
               onPress={() => setActiveTab(id)}
             >
               <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                {id === 'orders' ? 'Commandes' : id === 'staff' ? 'Équipe' : 'Réglages'}
+                {id === 'orders'
+                  ? 'Commandes'
+                  : id === 'staff'
+                  ? 'Équipe'
+                  : id === 'settings'
+                  ? 'Réglages'
+                  : 'Analyses'}
               </Text>
             </TouchableOpacity>
           );
@@ -127,7 +134,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           onToggleActive={handleToggleActive}
           onOpenSchedule={handleOpenScheduleModal}
         />
-      ) : (
+      ) : activeTab === 'settings' ? (
         <SettingsTab
           restaurantInfo={restaurantInfo}
           orderingSettings={orderingSettings}
@@ -137,6 +144,8 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           onUpdateRestaurantInfo={saveRestaurantInfo}
           onUpdateOrderingSettings={saveOrderingSettings}
         />
+      ) : (
+        <AnalyticsTab restaurantId={staff.restaurantId} />
       )}
 
       <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />

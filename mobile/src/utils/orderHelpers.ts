@@ -9,6 +9,7 @@ export const ORDER_DETAIL_SELECT = `
   scheduled_at,
   pickup_name,
   pickup_phone,
+  delivery_name,
   delivery_address,
   tip_amount,
   cook_id,
@@ -91,9 +92,15 @@ export const formatAddress = (address?: Record<string, any> | null) => {
 
 export const getCustomerName = (order: KitchenOrder) => {
   if (order.fulfillment === 'pickup') {
+    // Prioriser pickupName (nom fourni dans la commande)
+    // Si pickupName n'est pas fourni, utiliser order.customer?.first_name comme fallback
+    // Cela permet de gérer les cas où le site web n'a pas rempli pickupName
     return order.pickupName || order.customer?.first_name || 'Client';
   }
-  return order.deliveryAddress?.name || order.customer?.first_name || 'Client';
+  // Prioriser deliveryName (nom fourni dans la commande, colonne dédiée)
+  // Si deliveryName n'est pas fourni, essayer deliveryAddress.name (pour compatibilité avec anciennes commandes)
+  // En dernier recours, utiliser order.customer?.first_name comme fallback
+  return order.deliveryName || order.deliveryAddress?.name || order.customer?.first_name || 'Client';
 };
 
 export const getCustomerPhone = (order: KitchenOrder) => {
@@ -132,6 +139,7 @@ export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
     scheduledAt: row.scheduled_at,
     pickupName: row.pickup_name,
     pickupPhone: row.pickup_phone,
+    deliveryName: row.delivery_name,
     deliveryAddress: row.delivery_address,
     cookId: row.cook_id ?? null,
     cookName: cookRaw?.username ?? null,

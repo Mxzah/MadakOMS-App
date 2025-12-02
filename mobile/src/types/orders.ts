@@ -58,6 +58,7 @@ export type KitchenOrder = {
   scheduledAt: string | null;
   pickupName?: string | null;
   pickupPhone?: string | null;
+  deliveryName?: string | null;
   deliveryAddress?: Record<string, any> | null;
   cookId?: string | null;
   cookName?: string | null;

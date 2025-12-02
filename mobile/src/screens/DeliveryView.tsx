@@ -363,7 +363,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         distance: computeDistanceLabel(driverLocation, destinationCoords, fallbackDistance),
         eta: computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
       status: (row.status as AssignedOrder['status']) ?? 'ready',
-      customerName: row.customer?.first_name ?? null,
+      customerName: row.delivery_name || row.customer?.first_name || null,
       customerPhone: row.customer?.phone ?? null,
       customerEmail: row.customer?.email ?? null,
       scheduledAt: row.scheduled_at ?? null,
@@ -380,7 +380,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       const { data, error } = await supabase
         .from('orders')
         .select(
-          'id, order_number, status, delivery_address, scheduled_at, tip_amount, customer:customer_id(first_name, phone, email), payments!order_id(method)'
+          'id, order_number, status, delivery_name, delivery_address, scheduled_at, tip_amount, customer:customer_id(first_name, phone, email), payments!order_id(method)'
         )
         .eq('restaurant_id', staff.restaurantId)
         .in('status', ['ready', 'assigned', 'enroute'])
@@ -434,6 +434,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         `
           id,
           order_number,
+          delivery_name,
           delivery_address,
           status,
           driver_id,
@@ -483,7 +484,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           id: row.id,
           orderNumber: row.order_number,
           restaurantName: staff.restaurantName,
-          customerName: customerInfo?.first_name ?? null,
+          customerName: row.delivery_name || customerInfo?.first_name || null,
           customerPhone: customerInfo?.phone ?? null,
           customerEmail: customerInfo?.email ?? null,
           customerAddress: row.delivery_address?.address ?? 'Adresse à confirmer',
@@ -911,7 +912,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           id: data.id,
           orderNumber: data.order_number ?? null,
           restaurantName: staff.restaurantName,
-          customerName: customerRaw?.first_name ?? null,
+          customerName: (data as any).delivery_name || customerRaw?.first_name || null,
           customerPhone: customerRaw?.phone ?? null,
           customerEmail: customerRaw?.email ?? null,
           customerAddress:
