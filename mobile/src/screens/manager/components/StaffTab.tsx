@@ -3,6 +3,7 @@ import type { KitchenOrder } from '../../../types/orders';
 import { colors } from '../../kitchen/constants';
 import type { StaffUser } from '../types';
 import { styles } from '../styles';
+import type { KitchenTheme } from '../../kitchen/types';
 
 type StaffTabProps = {
   staffUsers: StaffUser[];
@@ -14,6 +15,8 @@ type StaffTabProps = {
   onResetPassword: () => void;
   onToggleActive: () => void;
   onOpenSchedule: () => void;
+  theme?: KitchenTheme;
+  isDark?: boolean;
 };
 
 export function StaffTab({
@@ -26,46 +29,116 @@ export function StaffTab({
   onResetPassword,
   onToggleActive,
   onOpenSchedule,
+  theme,
+  isDark = false,
 }: StaffTabProps) {
+  // Utiliser le thème par défaut si non fourni
+  const currentTheme = theme || {
+    background: colors.background,
+    surface: colors.surface,
+    surfaceMuted: '#F6F7FB',
+    textPrimary: colors.dark,
+    textSecondary: colors.muted,
+    border: colors.border,
+    pillActiveBg: colors.accent,
+    pillActiveText: '#FFFFFF',
+  };
+
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.staffContent}>
+    <ScrollView
+      style={[styles.scroll, { backgroundColor: currentTheme.background }]}
+      contentContainerStyle={styles.staffContent}
+    >
       <View style={styles.staffHeaderRow}>
-        <Text style={styles.sectionTitle}>Équipe</Text>
+        <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>Équipe</Text>
       </View>
       <View style={styles.staffActionsRow}>
-        <TouchableOpacity style={styles.staffActionButton} onPress={onAddStaff}>
-          <Text style={styles.staffActionText}>Ajouter</Text>
+        <TouchableOpacity
+          style={[
+            styles.staffActionButton,
+            {
+              borderColor: currentTheme.border,
+              backgroundColor: currentTheme.surface,
+            },
+          ]}
+          onPress={onAddStaff}
+        >
+          <Text style={[styles.staffActionText, { color: currentTheme.textPrimary }]}>Ajouter</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.staffActionButton} onPress={onResetPassword}>
-          <Text style={styles.staffActionText}>Réinit. mot de passe</Text>
+        <TouchableOpacity
+          style={[
+            styles.staffActionButton,
+            {
+              borderColor: currentTheme.border,
+              backgroundColor: currentTheme.surface,
+            },
+          ]}
+          onPress={onResetPassword}
+        >
+          <Text style={[styles.staffActionText, { color: currentTheme.textPrimary }]}>
+            Réinit. mot de passe
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.staffActionButton} onPress={onToggleActive}>
-          <Text style={styles.staffActionText}>Activer / désactiver</Text>
+        <TouchableOpacity
+          style={[
+            styles.staffActionButton,
+            {
+              borderColor: currentTheme.border,
+              backgroundColor: currentTheme.surface,
+            },
+          ]}
+          onPress={onToggleActive}
+        >
+          <Text style={[styles.staffActionText, { color: currentTheme.textPrimary }]}>
+            Activer / désactiver
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.staffActionButton} onPress={onOpenSchedule}>
-          <Text style={styles.staffActionText}>Horaires</Text>
+        <TouchableOpacity
+          style={[
+            styles.staffActionButton,
+            {
+              borderColor: currentTheme.border,
+              backgroundColor: currentTheme.surface,
+            },
+          ]}
+          onPress={onOpenSchedule}
+        >
+          <Text style={[styles.staffActionText, { color: currentTheme.textPrimary }]}>Horaires</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.staffSection}>
-        <Text style={styles.staffSectionTitle}>Tous les employés</Text>
+      <View style={[styles.staffSection, { backgroundColor: currentTheme.surface }]}>
+        <Text style={[styles.staffSectionTitle, { color: currentTheme.textPrimary }]}>
+          Tous les employés
+        </Text>
         {staffLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator color={colors.accent} />
+            <ActivityIndicator color={currentTheme.pillActiveBg} />
           </View>
         ) : staffUsers.length === 0 ? (
-          <Text style={styles.sectionEmpty}>Aucun employé configuré.</Text>
+          <Text style={[styles.sectionEmpty, { color: currentTheme.textSecondary }]}>
+            Aucun employé configuré.
+          </Text>
         ) : (
           staffUsers.map((user) => (
             <TouchableOpacity
               key={user.id}
-              style={[styles.staffRow, selectedStaff?.id === user.id && styles.staffRowSelected]}
+              style={[
+                styles.staffRow,
+                { borderTopColor: currentTheme.border },
+                selectedStaff?.id === user.id && {
+                  ...styles.staffRowSelected,
+                  backgroundColor: isDark ? currentTheme.surfaceMuted : '#EFF6FF',
+                },
+              ]}
               onPress={() => onSelectStaff(user)}
               activeOpacity={0.8}
             >
               <View style={{ flex: 1 }}>
-                <Text style={styles.staffName}>{user.username}</Text>
-                <Text style={styles.staffMeta}>
+                <Text style={[styles.staffName, { color: currentTheme.textPrimary }]}>
+                  {user.username}
+                </Text>
+                <Text style={[styles.staffMeta, { color: currentTheme.textSecondary }]}>
                   {user.role === 'cook'
                     ? 'Cuisine'
                     : user.role === 'delivery'
@@ -93,20 +166,27 @@ export function StaffTab({
         )}
       </View>
 
-      <View style={styles.staffSection}>
-        <Text style={styles.staffSectionTitle}>Livreurs actifs</Text>
+      <View style={[styles.staffSection, { backgroundColor: currentTheme.surface }]}>
+        <Text style={[styles.staffSectionTitle, { color: currentTheme.textPrimary }]}>
+          Livreurs actifs
+        </Text>
         {staffLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator color={colors.accent} />
+            <ActivityIndicator color={currentTheme.pillActiveBg} />
           </View>
         ) : (
           staffUsers
             .filter((u) => u.role === 'delivery' && u.isActive)
             .map((user) => (
-              <View key={user.id} style={styles.staffRow}>
+              <View
+                key={user.id}
+                style={[styles.staffRow, { borderTopColor: currentTheme.border }]}
+              >
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.staffName}>{user.username}</Text>
-                  <Text style={styles.staffMeta}>
+                  <Text style={[styles.staffName, { color: currentTheme.textPrimary }]}>
+                    {user.username}
+                  </Text>
+                  <Text style={[styles.staffMeta, { color: currentTheme.textSecondary }]}>
                     Statut:{' '}
                     {orders.some(
                       (o) =>

@@ -4,17 +4,32 @@ import { supabase } from '../../../lib/supabase';
 import { colors } from '../../kitchen/constants';
 import type { StaffUser } from '../types';
 import { styles } from '../styles';
+import type { KitchenTheme } from '../../kitchen/types';
 
 type ResetPasswordModalProps = {
   visible: boolean;
   staff: StaffUser | null;
   onClose: () => void;
+  theme?: KitchenTheme;
+  isDark?: boolean;
 };
 
-export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordModalProps) {
+export function ResetPasswordModal({ visible, staff, onClose, theme, isDark = false }: ResetPasswordModalProps) {
   const [mode, setMode] = useState<'random' | 'custom'>('random');
   const [customPassword, setCustomPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Utiliser le thème par défaut si non fourni
+  const currentTheme = theme || {
+    background: colors.background,
+    surface: colors.surface,
+    surfaceMuted: '#F6F7FB',
+    textPrimary: colors.dark,
+    textSecondary: colors.muted,
+    border: colors.border,
+    pillActiveBg: colors.accent,
+    pillActiveText: '#FFFFFF',
+  };
 
   const handleConfirm = useCallback(async () => {
     if (!staff) return;
@@ -79,23 +94,33 @@ export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordMod
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1, justifyContent: 'flex-end' }}
         >
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-            <ScrollView 
+          <Pressable
+            style={[styles.modalSheet, { backgroundColor: currentTheme.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ScrollView
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.modalTitle}>Réinitialiser le mot de passe</Text>
-              <Text style={styles.modalMeta}>
+              <Text style={[styles.modalTitle, { color: currentTheme.textPrimary }]}>
+                Réinitialiser le mot de passe
+              </Text>
+              <Text style={[styles.modalMeta, { color: currentTheme.textSecondary }]}>
                 Choisissez comment réinitialiser le mot de passe pour {staff?.username}.
               </Text>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Mode de réinitialisation</Text>
-                <View style={styles.segmented}>
+              <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+                <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>
+                  Mode de réinitialisation
+                </Text>
+                <View style={[styles.segmented, { backgroundColor: currentTheme.surfaceMuted }]}>
                   <TouchableOpacity
                     style={[
                       styles.segment,
-                      mode === 'random' && styles.segmentActive,
+                      mode === 'random' && {
+                        ...styles.segmentActive,
+                        backgroundColor: currentTheme.pillActiveBg,
+                      },
                       { flex: 1 },
                     ]}
                     onPress={() => setMode('random')}
@@ -103,6 +128,12 @@ export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordMod
                     <Text
                       style={[
                         styles.segmentText,
+                        {
+                          color:
+                            mode === 'random'
+                              ? currentTheme.pillActiveText
+                              : currentTheme.textSecondary,
+                        },
                         mode === 'random' && styles.segmentTextActive,
                       ]}
                     >
@@ -112,7 +143,10 @@ export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordMod
                   <TouchableOpacity
                     style={[
                       styles.segment,
-                      mode === 'custom' && styles.segmentActive,
+                      mode === 'custom' && {
+                        ...styles.segmentActive,
+                        backgroundColor: currentTheme.pillActiveBg,
+                      },
                       { flex: 1 },
                     ]}
                     onPress={() => setMode('custom')}
@@ -120,6 +154,12 @@ export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordMod
                     <Text
                       style={[
                         styles.segmentText,
+                        {
+                          color:
+                            mode === 'custom'
+                              ? currentTheme.pillActiveText
+                              : currentTheme.textSecondary,
+                        },
                         mode === 'custom' && styles.segmentTextActive,
                       ]}
                     >
@@ -130,14 +170,23 @@ export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordMod
               </View>
 
               {mode === 'custom' && (
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Mot de passe personnalisé</Text>
+                <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+                  <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>
+                    Mot de passe personnalisé
+                  </Text>
                   <TextInput
                     value={customPassword}
                     onChangeText={setCustomPassword}
                     placeholder="Entrez le nouveau mot de passe"
-                    placeholderTextColor={colors.muted}
-                    style={styles.searchInput}
+                    placeholderTextColor={currentTheme.textSecondary}
+                    style={[
+                      styles.searchInput,
+                      {
+                        backgroundColor: currentTheme.surface,
+                        borderColor: currentTheme.border,
+                        color: currentTheme.textPrimary,
+                      },
+                    ]}
                     secureTextEntry
                     autoCapitalize="none"
                   />
@@ -145,20 +194,29 @@ export function ResetPasswordModal({ visible, staff, onClose }: ResetPasswordMod
               )}
 
               <TouchableOpacity
-                style={[styles.modalCloseButton, loading && { opacity: 0.6 }]}
+                style={[
+                  styles.modalCloseButton,
+                  { backgroundColor: currentTheme.pillActiveBg },
+                  loading && { opacity: 0.6 },
+                ]}
                 onPress={handleConfirm}
                 disabled={loading}
               >
-                <Text style={styles.modalCloseText}>
+                <Text style={[styles.modalCloseText, { color: currentTheme.pillActiveText }]}>
                   {loading ? 'Réinitialisation…' : 'Confirmer'}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalCloseButton, { backgroundColor: '#E5E7EB', marginTop: 8 }]}
+                style={[
+                  styles.modalCloseButton,
+                  { backgroundColor: currentTheme.surfaceMuted, marginTop: 8 },
+                ]}
                 onPress={handleClose}
               >
-                <Text style={[styles.modalCloseText, { color: colors.dark }]}>Annuler</Text>
+                <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
+                  Annuler
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </Pressable>

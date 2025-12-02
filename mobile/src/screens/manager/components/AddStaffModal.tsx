@@ -4,20 +4,35 @@ import { supabase } from '../../../lib/supabase';
 import { colors } from '../../kitchen/constants';
 import { STAFF_EMAIL_DOMAIN } from '../constants';
 import { styles } from '../styles';
+import type { KitchenTheme } from '../../kitchen/types';
 
 type AddStaffModalProps = {
   visible: boolean;
   restaurantId: string;
   onClose: () => void;
   onSuccess: () => void;
+  theme?: KitchenTheme;
+  isDark?: boolean;
 };
 
-export function AddStaffModal({ visible, restaurantId, onClose, onSuccess }: AddStaffModalProps) {
+export function AddStaffModal({ visible, restaurantId, onClose, onSuccess, theme, isDark = false }: AddStaffModalProps) {
   const [username, setUsername] = useState('');
   const [role, setRole] = useState<'cook' | 'delivery' | 'manager'>('cook');
   const [password, setPassword] = useState('');
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Utiliser le thème par défaut si non fourni
+  const currentTheme = theme || {
+    background: colors.background,
+    surface: colors.surface,
+    surfaceMuted: '#F6F7FB',
+    textPrimary: colors.dark,
+    textSecondary: colors.muted,
+    border: colors.border,
+    pillActiveBg: colors.accent,
+    pillActiveText: '#FFFFFF',
+  };
 
   const generateRandomPassword = useCallback(() => {
     const random = Math.random().toString(36).slice(-6);
@@ -88,41 +103,73 @@ export function AddStaffModal({ visible, restaurantId, onClose, onSuccess }: Add
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1, justifyContent: 'flex-end' }}
         >
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-            <ScrollView 
+          <Pressable
+            style={[styles.modalSheet, { backgroundColor: currentTheme.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ScrollView
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.modalTitle}>Ajouter un membre</Text>
-              <Text style={styles.modalMeta}>
+              <Text style={[styles.modalTitle, { color: currentTheme.textPrimary }]}>
+                Ajouter un membre
+              </Text>
+              <Text style={[styles.modalMeta, { color: currentTheme.textSecondary }]}>
                 Un compte interne sera créé avec un courriel pseudo comme
-                <Text style={{ fontWeight: '600' }}> nomutilisateur{STAFF_EMAIL_DOMAIN}</Text>.
+                <Text style={{ fontWeight: '600', color: currentTheme.textPrimary }}>
+                  {' '}nomutilisateur{STAFF_EMAIL_DOMAIN}
+                </Text>.
               </Text>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Nom d'utilisateur</Text>
+              <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+                <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>
+                  Nom d'utilisateur
+                </Text>
                 <TextInput
                   value={username}
                   onChangeText={setUsername}
                   placeholder="ex: chef-cuisine"
-                  placeholderTextColor={colors.muted}
-                  style={styles.searchInput}
+                  placeholderTextColor={currentTheme.textSecondary}
+                  style={[
+                    styles.searchInput,
+                    {
+                      backgroundColor: currentTheme.surface,
+                      borderColor: currentTheme.border,
+                      color: currentTheme.textPrimary,
+                    },
+                  ]}
                   autoCapitalize="none"
                 />
               </View>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Rôle</Text>
-                <View style={styles.segmented}>
+              <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+                <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>
+                  Rôle
+                </Text>
+                <View style={[styles.segmented, { backgroundColor: currentTheme.surfaceMuted }]}>
                   {(['cook', 'delivery', 'manager'] as const).map((r) => {
                     const isActive = role === r;
                     return (
                       <TouchableOpacity
                         key={r}
-                        style={[styles.segment, isActive && styles.segmentActive]}
+                        style={[
+                          styles.segment,
+                          isActive && {
+                            ...styles.segmentActive,
+                            backgroundColor: currentTheme.pillActiveBg,
+                          },
+                        ]}
                         onPress={() => setRole(r)}
                       >
-                        <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+                        <Text
+                          style={[
+                            styles.segmentText,
+                            {
+                              color: isActive ? currentTheme.pillActiveText : currentTheme.textSecondary,
+                            },
+                            isActive && styles.segmentTextActive,
+                          ]}
+                        >
                           {r === 'cook' ? 'Cuisine' : r === 'delivery' ? 'Livraison' : 'Gestion'}
                         </Text>
                       </TouchableOpacity>
@@ -131,60 +178,82 @@ export function AddStaffModal({ visible, restaurantId, onClose, onSuccess }: Add
                 </View>
               </View>
 
-              <View style={styles.modalSection}>
+              <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={styles.modalSectionTitle}>Mot de passe</Text>
+                  <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>
+                    Mot de passe
+                  </Text>
                   <TouchableOpacity
                     onPress={generateRandomPassword}
                     style={{
                       paddingHorizontal: 12,
                       paddingVertical: 6,
-                      backgroundColor: colors.accent,
+                      backgroundColor: currentTheme.pillActiveBg,
                       borderRadius: 8,
                     }}
                   >
-                    <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '600' }}>Générer</Text>
+                    <Text style={{ color: currentTheme.pillActiveText, fontSize: 13, fontWeight: '600' }}>
+                      Générer
+                    </Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={[styles.modalSubText, { marginBottom: 8 }]}>
+                <Text style={[styles.modalSubText, { marginBottom: 8, color: currentTheme.textSecondary }]}>
                   Laissez vide pour générer automatiquement un mot de passe aléatoire.
                 </Text>
                 <TextInput
                   value={password}
                   onChangeText={setPassword}
                   placeholder="Mot de passe (optionnel)"
-                  placeholderTextColor={colors.muted}
-                  style={styles.searchInput}
+                  placeholderTextColor={currentTheme.textSecondary}
+                  style={[
+                    styles.searchInput,
+                    {
+                      backgroundColor: currentTheme.surface,
+                      borderColor: currentTheme.border,
+                      color: currentTheme.textPrimary,
+                    },
+                  ]}
                   secureTextEntry
                   autoCapitalize="none"
                 />
               </View>
 
               {tempPassword && (
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Mot de passe temporaire</Text>
-                  <Text style={styles.modalText}>{tempPassword}</Text>
-                  <Text style={styles.modalSubText}>
+                <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+                  <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>
+                    Mot de passe temporaire
+                  </Text>
+                  <Text style={[styles.modalText, { color: currentTheme.textPrimary }]}>
+                    {tempPassword}
+                  </Text>
+                  <Text style={[styles.modalSubText, { color: currentTheme.textSecondary }]}>
                     Communiquez ce mot de passe au membre. Il pourra le modifier via Supabase si besoin.
                   </Text>
                 </View>
               )}
 
               <TouchableOpacity
-                style={[styles.modalCloseButton, saving && { opacity: 0.6 }]}
+                style={[
+                  styles.modalCloseButton,
+                  { backgroundColor: currentTheme.pillActiveBg },
+                  saving && { opacity: 0.6 },
+                ]}
                 onPress={handleAddStaff}
                 disabled={saving}
               >
-                <Text style={styles.modalCloseText}>
+                <Text style={[styles.modalCloseText, { color: currentTheme.pillActiveText }]}>
                   {saving ? 'Création…' : "Créer l'employé"}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalCloseButton, { backgroundColor: '#E5E7EB', marginTop: 8 }]}
+                style={[
+                  styles.modalCloseButton,
+                  { backgroundColor: currentTheme.surfaceMuted, marginTop: 8 },
+                ]}
                 onPress={handleClose}
               >
-                <Text style={[styles.modalCloseText, { color: colors.dark }]}>Fermer</Text>
+                <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>Fermer</Text>
               </TouchableOpacity>
             </ScrollView>
           </Pressable>

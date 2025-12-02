@@ -7,6 +7,7 @@ import { useDeliveryFeeRules, type DeliveryFeeRules, type PeakHour, type Minimum
 import { usePaymentSettings, type PaymentMethod } from '../hooks/usePaymentSettings';
 import { useRestaurantHours, type RestaurantHours, type DayHours } from '../hooks/useRestaurantHours';
 import { styles } from '../styles';
+import type { KitchenTheme } from '../../kitchen/types';
 
 type SettingsTabProps = {
   restaurantInfo: RestaurantInfo;
@@ -16,6 +17,11 @@ type SettingsTabProps = {
   restaurantId: string;
   onUpdateRestaurantInfo: (info: RestaurantInfo) => Promise<boolean>;
   onUpdateOrderingSettings: (settings: OrderingSettings) => Promise<boolean>;
+  darkModeEnabled?: boolean;
+  onToggleDarkMode?: (enabled: boolean) => void;
+  onLogout?: () => void;
+  theme?: KitchenTheme;
+  isDark?: boolean;
 };
 
 // Fonction de validation de l'email
@@ -136,7 +142,37 @@ export function SettingsTab({
   restaurantId,
   onUpdateRestaurantInfo,
   onUpdateOrderingSettings,
+  darkModeEnabled = false,
+  onToggleDarkMode,
+  onLogout,
+  theme,
+  isDark = false,
 }: SettingsTabProps) {
+  // Utiliser le thème par défaut si non fourni
+  const currentTheme = theme || {
+    background: colors.background,
+    surface: colors.surface,
+    surfaceMuted: '#F6F7FB',
+    textPrimary: colors.dark,
+    textSecondary: colors.muted,
+    border: colors.border,
+    pillActiveBg: colors.accent,
+    pillActiveText: '#FFFFFF',
+  };
+
+  // Styles dynamiques basés sur le thème
+  const dynamicStyles = {
+    sectionCard: { ...styles.sectionCard, backgroundColor: currentTheme.surface },
+    sectionTitle: { ...styles.sectionTitle, color: currentTheme.textPrimary },
+    modalSection: { ...styles.modalSection, backgroundColor: currentTheme.surfaceMuted },
+    modalSectionTitle: { ...styles.modalSectionTitle, color: currentTheme.textPrimary },
+    searchInput: {
+      ...styles.searchInput,
+      backgroundColor: currentTheme.surface,
+      borderColor: currentTheme.border,
+      color: currentTheme.textPrimary,
+    },
+  };
   const [localRestaurantInfo, setLocalRestaurantInfo] = useState<RestaurantInfo>(restaurantInfo);
   const [localOrderingSettings, setLocalOrderingSettings] = useState<OrderingSettings>(orderingSettings);
   const [savingInfo, setSavingInfo] = useState(false);
@@ -520,39 +556,46 @@ export function SettingsTab({
   if (loading || deliveryZonesLoading || deliveryFeeRulesLoading || paymentSettingsLoading || restaurantHoursLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={currentTheme.pillActiveBg} />
       </View>
     );
   }
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: currentTheme.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, { backgroundColor: currentTheme.background }]}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
       {/* Restaurant Info Section */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>⚙️ Restaurant Info</Text>
+      <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+        <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>⚙️ Restaurant Info</Text>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Nom</Text>
+        <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+          <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>Nom</Text>
           <TextInput
             value={localRestaurantInfo.name}
             onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, name: text })}
             placeholder="Nom du restaurant"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={[
+              styles.searchInput,
+              {
+                backgroundColor: currentTheme.surface,
+                borderColor: currentTheme.border,
+                color: currentTheme.textPrimary,
+              },
+            ]}
           />
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Téléphone</Text>
+        <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+          <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>Téléphone</Text>
           <TextInput
             value={localRestaurantInfo.phone || ''}
             onChangeText={(text) => {
@@ -563,10 +606,15 @@ export function SettingsTab({
               setPhoneError(validation.isValid ? undefined : validation.error);
             }}
             placeholder="514-123-4567"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={currentTheme.textSecondary}
             style={[
               styles.searchInput,
-              phoneError && { borderColor: '#EF4444', borderWidth: 1 },
+              {
+                backgroundColor: currentTheme.surface,
+                borderColor: phoneError ? '#EF4444' : currentTheme.border,
+                color: currentTheme.textPrimary,
+              },
+              phoneError && { borderWidth: 1 },
             ]}
             keyboardType="default"
           />
@@ -576,14 +624,14 @@ export function SettingsTab({
             </Text>
           )}
           {!phoneError && localRestaurantInfo.phone && (
-            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>
+            <Text style={{ color: currentTheme.textSecondary, fontSize: 12, marginTop: 4 }}>
               Format valide
             </Text>
           )}
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Email</Text>
+        <View style={[styles.modalSection, { backgroundColor: currentTheme.surfaceMuted }]}>
+          <Text style={[styles.modalSectionTitle, { color: currentTheme.textPrimary }]}>Email</Text>
           <TextInput
             value={localRestaurantInfo.email || ''}
             onChangeText={(text) => {
@@ -594,10 +642,15 @@ export function SettingsTab({
               setEmailError(validation.isValid ? undefined : validation.error);
             }}
             placeholder="restaurant@example.com"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={currentTheme.textSecondary}
             style={[
               styles.searchInput,
-              emailError && { borderColor: '#EF4444', borderWidth: 1 },
+              {
+                backgroundColor: currentTheme.surface,
+                borderColor: emailError ? '#EF4444' : currentTheme.border,
+                color: currentTheme.textPrimary,
+              },
+              emailError && { borderWidth: 1 },
             ]}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -609,42 +662,42 @@ export function SettingsTab({
             </Text>
           )}
           {!emailError && localRestaurantInfo.email && (
-            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>
+            <Text style={{ color: currentTheme.textSecondary, fontSize: 12, marginTop: 4 }}>
               Format valide
             </Text>
           )}
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Adresse</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Adresse</Text>
           <TextInput
             value={localRestaurantInfo.addressLine1 || ''}
             onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, addressLine1: text || null })}
             placeholder="Ligne 1"
-            placeholderTextColor={colors.muted}
-            style={[styles.searchInput, { marginBottom: 8 }]}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={[dynamicStyles.searchInput, { marginBottom: 8 }]}
           />
           <TextInput
             value={localRestaurantInfo.addressLine2 || ''}
             onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, addressLine2: text || null })}
             placeholder="Ligne 2 (optionnel)"
-            placeholderTextColor={colors.muted}
-            style={[styles.searchInput, { marginBottom: 8 }]}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={[dynamicStyles.searchInput, { marginBottom: 8 }]}
           />
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput
               value={localRestaurantInfo.city || ''}
               onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, city: text || null })}
               placeholder="Ville"
-              placeholderTextColor={colors.muted}
-              style={[styles.searchInput, { flex: 1 }]}
+              placeholderTextColor={currentTheme.textSecondary}
+              style={[dynamicStyles.searchInput, { flex: 1 }]}
             />
             <TextInput
               value={localRestaurantInfo.province || ''}
               onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, province: text || null })}
               placeholder="Province"
-              placeholderTextColor={colors.muted}
-              style={[styles.searchInput, { flex: 1 }]}
+              placeholderTextColor={currentTheme.textSecondary}
+              style={[dynamicStyles.searchInput, { flex: 1 }]}
             />
           </View>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
@@ -652,15 +705,15 @@ export function SettingsTab({
               value={localRestaurantInfo.postalCode || ''}
               onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, postalCode: text || null })}
               placeholder="Code postal"
-              placeholderTextColor={colors.muted}
-              style={[styles.searchInput, { flex: 1 }]}
+              placeholderTextColor={currentTheme.textSecondary}
+              style={[dynamicStyles.searchInput, { flex: 1 }]}
             />
             <TextInput
               value={localRestaurantInfo.country || ''}
               onChangeText={(text) => setLocalRestaurantInfo({ ...localRestaurantInfo, country: text || null })}
               placeholder="Pays"
-              placeholderTextColor={colors.muted}
-              style={[styles.searchInput, { flex: 1 }]}
+              placeholderTextColor={currentTheme.textSecondary}
+              style={[dynamicStyles.searchInput, { flex: 1 }]}
             />
           </View>
         </View>
@@ -669,13 +722,13 @@ export function SettingsTab({
           <TouchableOpacity
             style={[
               styles.modalCloseButton,
-              { backgroundColor: '#E5E7EB' },
+              { backgroundColor: currentTheme.surfaceMuted },
               (saving || savingInfo) && { opacity: 0.6 },
             ]}
             onPress={handleCancelRestaurantInfo}
             disabled={saving || savingInfo}
           >
-            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+            <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
               Annuler les changements
             </Text>
           </TouchableOpacity>
@@ -692,12 +745,12 @@ export function SettingsTab({
       </View>
 
       {/* Ordering Settings Section */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>📦 Paramètres de commande</Text>
+      <View style={dynamicStyles.sectionCard}>
+        <Text style={dynamicStyles.sectionTitle}>📦 Paramètres de commande</Text>
 
-        <View style={styles.modalSection}>
+        <View style={dynamicStyles.modalSection}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.modalSectionTitle}>Commandes activées</Text>
+            <Text style={dynamicStyles.modalSectionTitle}>Commandes activées</Text>
             <Switch
               value={localOrderingSettings.orderingEnabled}
               onValueChange={(value) => setLocalOrderingSettings({ ...localOrderingSettings, orderingEnabled: value })}
@@ -707,9 +760,9 @@ export function SettingsTab({
           </View>
         </View>
 
-        <View style={styles.modalSection}>
+        <View style={dynamicStyles.modalSection}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.modalSectionTitle}>À emporter activé</Text>
+            <Text style={dynamicStyles.modalSectionTitle}>À emporter activé</Text>
             <Switch
               value={localOrderingSettings.pickupEnabled}
               onValueChange={(value) => setLocalOrderingSettings({ ...localOrderingSettings, pickupEnabled: value })}
@@ -719,9 +772,9 @@ export function SettingsTab({
           </View>
         </View>
 
-        <View style={styles.modalSection}>
+        <View style={dynamicStyles.modalSection}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.modalSectionTitle}>Livraison activée</Text>
+            <Text style={dynamicStyles.modalSectionTitle}>Livraison activée</Text>
             <Switch
               value={localOrderingSettings.deliveryEnabled}
               onValueChange={(value) => setLocalOrderingSettings({ ...localOrderingSettings, deliveryEnabled: value })}
@@ -731,8 +784,8 @@ export function SettingsTab({
           </View>
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Montant minimum - À emporter</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Montant minimum - À emporter</Text>
           <TextInput
             value={localOrderingSettings.minOrderAmountPickup?.toString() || ''}
             onChangeText={(text) => {
@@ -740,14 +793,14 @@ export function SettingsTab({
               setLocalOrderingSettings({ ...localOrderingSettings, minOrderAmountPickup: num });
             }}
             placeholder="0.00"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={dynamicStyles.searchInput}
             keyboardType="decimal-pad"
           />
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Montant minimum - Livraison</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Montant minimum - Livraison</Text>
           <TextInput
             value={localOrderingSettings.minOrderAmountDelivery?.toString() || ''}
             onChangeText={(text) => {
@@ -755,14 +808,14 @@ export function SettingsTab({
               setLocalOrderingSettings({ ...localOrderingSettings, minOrderAmountDelivery: num });
             }}
             placeholder="0.00"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={dynamicStyles.searchInput}
             keyboardType="decimal-pad"
           />
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Temps de préparation estimé (minutes)</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Temps de préparation estimé (minutes)</Text>
           <TextInput
             value={localOrderingSettings.estimatedPrepTimeMinutes?.toString() || ''}
             onChangeText={(text) => {
@@ -770,14 +823,14 @@ export function SettingsTab({
               setLocalOrderingSettings({ ...localOrderingSettings, estimatedPrepTimeMinutes: num });
             }}
             placeholder="20"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={dynamicStyles.searchInput}
             keyboardType="numeric"
           />
         </View>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Temps de livraison estimé (minutes)</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Temps de livraison estimé (minutes)</Text>
           <TextInput
             value={localOrderingSettings.estimatedDeliveryTimeMinutes?.toString() || ''}
             onChangeText={(text) => {
@@ -785,8 +838,8 @@ export function SettingsTab({
               setLocalOrderingSettings({ ...localOrderingSettings, estimatedDeliveryTimeMinutes: num });
             }}
             placeholder="30"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
+            placeholderTextColor={currentTheme.textSecondary}
+            style={dynamicStyles.searchInput}
             keyboardType="numeric"
           />
         </View>
@@ -795,13 +848,13 @@ export function SettingsTab({
           <TouchableOpacity
             style={[
               styles.modalCloseButton,
-              { backgroundColor: '#E5E7EB' },
+              { backgroundColor: currentTheme.surfaceMuted },
               (saving || savingSettings) && { opacity: 0.6 },
             ]}
             onPress={handleCancelOrderingSettings}
             disabled={saving || savingSettings}
           >
-            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+            <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
               Annuler les changements
             </Text>
           </TouchableOpacity>
@@ -818,11 +871,11 @@ export function SettingsTab({
       </View>
 
       {/* Delivery Zones Section */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>📍 Zones de livraison</Text>
+      <View style={dynamicStyles.sectionCard}>
+        <Text style={dynamicStyles.sectionTitle}>📍 Zones de livraison</Text>
 
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Zones GeoJSON</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Zones GeoJSON</Text>
           <TextInput
             value={localDeliveryZoneSettings.deliveryZonesGeoJson ? JSON.stringify(localDeliveryZoneSettings.deliveryZonesGeoJson, null, 2) : ''}
             onChangeText={(text) => {
@@ -836,9 +889,9 @@ export function SettingsTab({
               }
             }}
             placeholder="Entrez le GeoJSON ici..."
-            placeholderTextColor={colors.muted}
-            style={[
-              styles.searchInput,
+            placeholderTextColor={currentTheme.textSecondary}
+              style={[
+              dynamicStyles.searchInput,
               { height: 120, textAlignVertical: 'top' },
               deliveryZonesGeojsonError && { borderColor: '#EF4444', borderWidth: 1 },
             ]}
@@ -849,8 +902,8 @@ export function SettingsTab({
               {deliveryZonesGeojsonError}
             </Text>
           )}
-          {!deliveryZonesGeojsonError && localDeliveryZoneSettings.deliveryZonesGeoJson && (
-            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>
+              {!deliveryZonesGeojsonError && localDeliveryZoneSettings.deliveryZonesGeoJson && (
+            <Text style={{ color: currentTheme.textSecondary, fontSize: 12, marginTop: 4 }}>
               GeoJSON valide
             </Text>
           )}
@@ -860,13 +913,13 @@ export function SettingsTab({
           <TouchableOpacity
             style={[
               styles.modalCloseButton,
-              { backgroundColor: '#E5E7EB' },
+              { backgroundColor: currentTheme.surfaceMuted },
               (saving || savingDeliveryZones) && { opacity: 0.6 },
             ]}
             onPress={handleCancelDeliveryZones}
             disabled={saving || savingDeliveryZones}
           >
-            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+            <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
               Annuler les changements
             </Text>
           </TouchableOpacity>
@@ -887,26 +940,26 @@ export function SettingsTab({
 
       {/* Delivery Fee Rules Section */}
       {localDeliveryFeeRules && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>💰 Règles de frais de livraison</Text>
+        <View style={dynamicStyles.sectionCard}>
+          <Text style={dynamicStyles.sectionTitle}>💰 Règles de frais de livraison</Text>
 
           {/* Type Selection */}
-          <View style={styles.modalSection}>
-            <Text style={styles.modalSectionTitle}>Type de frais</Text>
+          <View style={dynamicStyles.modalSection}>
+            <Text style={dynamicStyles.modalSectionTitle}>Type de frais</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
                 style={[
                   { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1 },
                   localDeliveryFeeRules.type === 'flat'
                     ? { backgroundColor: colors.accent, borderColor: colors.accent }
-                    : { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' },
+                    : { backgroundColor: currentTheme.surfaceMuted, borderColor: currentTheme.border },
                 ]}
                 onPress={() => setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, type: 'flat' })}
               >
                 <Text
                   style={[
                     { textAlign: 'center', fontWeight: '600' },
-                    localDeliveryFeeRules.type === 'flat' ? { color: '#FFFFFF' } : { color: '#374151' },
+                    localDeliveryFeeRules.type === 'flat' ? { color: currentTheme.pillActiveText } : { color: currentTheme.textPrimary },
                   ]}
                 >
                   Frais fixe
@@ -917,14 +970,14 @@ export function SettingsTab({
                   { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1 },
                   localDeliveryFeeRules.type === 'distance_based'
                     ? { backgroundColor: colors.accent, borderColor: colors.accent }
-                    : { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' },
+                    : { backgroundColor: currentTheme.surfaceMuted, borderColor: currentTheme.border },
                 ]}
                 onPress={() => setLocalDeliveryFeeRules({ ...localDeliveryFeeRules, type: 'distance_based' })}
               >
                 <Text
                   style={[
                     { textAlign: 'center', fontWeight: '600' },
-                    localDeliveryFeeRules.type === 'distance_based' ? { color: '#FFFFFF' } : { color: '#374151' },
+                    localDeliveryFeeRules.type === 'distance_based' ? { color: currentTheme.pillActiveText } : { color: currentTheme.textPrimary },
                   ]}
                 >
                   Basé sur distance
@@ -934,8 +987,8 @@ export function SettingsTab({
           </View>
 
           {/* Base Fee */}
-          <View style={styles.modalSection}>
-            <Text style={styles.modalSectionTitle}>Frais de base ($)</Text>
+          <View style={dynamicStyles.modalSection}>
+            <Text style={dynamicStyles.modalSectionTitle}>Frais de base ($)</Text>
             <TextInput
               value={baseFeeText}
               onChangeText={(text) => {
@@ -963,8 +1016,8 @@ export function SettingsTab({
                 }
               }}
               placeholder="3.99"
-              placeholderTextColor={colors.muted}
-              style={styles.searchInput}
+              placeholderTextColor={currentTheme.textSecondary}
+              style={dynamicStyles.searchInput}
               keyboardType="decimal-pad"
             />
           </View>
@@ -972,8 +1025,8 @@ export function SettingsTab({
           {/* Distance-Based Options */}
           {localDeliveryFeeRules.type === 'distance_based' && (
             <>
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Frais par km ($)</Text>
+              <View style={dynamicStyles.modalSection}>
+                <Text style={dynamicStyles.modalSectionTitle}>Frais par km ($)</Text>
                 <TextInput
                   value={perKmFeeText}
                   onChangeText={(text) => {
@@ -995,14 +1048,14 @@ export function SettingsTab({
                     }
                   }}
                   placeholder="0.50"
-                  placeholderTextColor={colors.muted}
-                  style={styles.searchInput}
+                  placeholderTextColor={currentTheme.textSecondary}
+                  style={dynamicStyles.searchInput}
                   keyboardType="decimal-pad"
                 />
               </View>
 
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Distance maximale (km)</Text>
+              <View style={dynamicStyles.modalSection}>
+                <Text style={dynamicStyles.modalSectionTitle}>Distance maximale (km)</Text>
                 <TextInput
                   value={maxDistanceKmText}
                   onChangeText={(text) => {
@@ -1024,8 +1077,8 @@ export function SettingsTab({
                     }
                   }}
                   placeholder="7"
-                  placeholderTextColor={colors.muted}
-                  style={styles.searchInput}
+                  placeholderTextColor={currentTheme.textSecondary}
+                  style={dynamicStyles.searchInput}
                   keyboardType="numeric"
                 />
               </View>
@@ -1033,9 +1086,9 @@ export function SettingsTab({
           )}
 
           {/* Free Delivery Above */}
-          <View style={styles.modalSection}>
+          <View style={dynamicStyles.modalSection}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.modalSectionTitle}>Livraison gratuite au-dessus de ($)</Text>
+              <Text style={dynamicStyles.modalSectionTitle}>Livraison gratuite au-dessus de ($)</Text>
               <Switch
                 value={localDeliveryFeeRules.freeDeliveryAbove !== null}
                 onValueChange={(enabled) => {
@@ -1044,8 +1097,8 @@ export function SettingsTab({
                     freeDeliveryAbove: enabled ? 30 : null,
                   });
                 }}
-                trackColor={{ false: '#E5E7EB', true: colors.accent }}
-                thumbColor="#FFFFFF"
+                trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+                thumbColor={currentTheme.surface}
               />
             </View>
             {localDeliveryFeeRules.freeDeliveryAbove !== null && (
@@ -1073,30 +1126,30 @@ export function SettingsTab({
                   }
                 }}
                 placeholder="30"
-                placeholderTextColor={colors.muted}
-                style={[styles.searchInput, { marginTop: 8 }]}
+                placeholderTextColor={currentTheme.textSecondary}
+                style={[dynamicStyles.searchInput, { marginTop: 8 }]}
                 keyboardType="decimal-pad"
               />
             )}
           </View>
 
           {/* Peak Hours */}
-          <View style={styles.modalSection}>
+          <View style={dynamicStyles.modalSection}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={styles.modalSectionTitle}>Frais d'heures de pointe</Text>
+              <Text style={dynamicStyles.modalSectionTitle}>Frais d'heures de pointe</Text>
               <TouchableOpacity
                 onPress={addPeakHour}
-                style={{ padding: 8, backgroundColor: colors.accent, borderRadius: 6 }}
+                style={{ padding: 8, backgroundColor: currentTheme.pillActiveBg, borderRadius: 6 }}
               >
-                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600' }}>+ Ajouter</Text>
+                <Text style={{ color: currentTheme.pillActiveText, fontSize: 12, fontWeight: '600' }}>+ Ajouter</Text>
               </TouchableOpacity>
             </View>
             {localDeliveryFeeRules.peakHours && localDeliveryFeeRules.peakHours.length > 0 && (
               <View style={{ gap: 12 }}>
                 {localDeliveryFeeRules.peakHours.map((peakHour, index) => (
-                  <View key={index} style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12 }}>
+                  <View key={index} style={{ borderWidth: 1, borderColor: currentTheme.border, borderRadius: 8, padding: 12, backgroundColor: currentTheme.surface }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <Text style={{ fontWeight: '600', color: '#374151' }}>Période {index + 1}</Text>
+                      <Text style={{ fontWeight: '600', color: currentTheme.textPrimary }}>Période {index + 1}</Text>
                       <TouchableOpacity
                         onPress={() => removePeakHour(index)}
                         style={{ padding: 4 }}
@@ -1106,28 +1159,28 @@ export function SettingsTab({
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Début (HH:MM)</Text>
+                        <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Début (HH:MM)</Text>
                         <TextInput
                           value={peakHour.start}
                           onChangeText={(text) => updatePeakHour(index, 'start', text)}
                           placeholder="11:00"
-                          placeholderTextColor={colors.muted}
-                          style={styles.searchInput}
+                          placeholderTextColor={currentTheme.textSecondary}
+                          style={dynamicStyles.searchInput}
                         />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Fin (HH:MM)</Text>
+                        <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Fin (HH:MM)</Text>
                         <TextInput
                           value={peakHour.end}
                           onChangeText={(text) => updatePeakHour(index, 'end', text)}
                           placeholder="13:00"
-                          placeholderTextColor={colors.muted}
-                          style={styles.searchInput}
+                          placeholderTextColor={currentTheme.textSecondary}
+                          style={dynamicStyles.searchInput}
                         />
                       </View>
                     </View>
                     <View>
-                      <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Frais supplémentaire ($)</Text>
+                      <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Frais supplémentaire ($)</Text>
                       <TextInput
                         value={peakHourFeeTexts[index] || peakHour.additionalFee.toString()}
                         onChangeText={(text) => {
@@ -1149,8 +1202,8 @@ export function SettingsTab({
                           }
                         }}
                         placeholder="1.00"
-                        placeholderTextColor={colors.muted}
-                        style={styles.searchInput}
+                        placeholderTextColor={currentTheme.textSecondary}
+                        style={dynamicStyles.searchInput}
                         keyboardType="decimal-pad"
                       />
                     </View>
@@ -1161,9 +1214,9 @@ export function SettingsTab({
           </View>
 
           {/* Weekend Fee */}
-          <View style={styles.modalSection}>
+          <View style={dynamicStyles.modalSection}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.modalSectionTitle}>Frais de fin de semaine ($)</Text>
+              <Text style={dynamicStyles.modalSectionTitle}>Frais de fin de semaine ($)</Text>
               <Switch
                 value={localDeliveryFeeRules.weekendFee !== null}
                 onValueChange={(enabled) => {
@@ -1172,8 +1225,8 @@ export function SettingsTab({
                     weekendFee: enabled ? 5 : null,
                   });
                 }}
-                trackColor={{ false: '#E5E7EB', true: colors.accent }}
-                thumbColor="#FFFFFF"
+                trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+                thumbColor={currentTheme.surface}
               />
             </View>
             {localDeliveryFeeRules.weekendFee !== null && (
@@ -1201,17 +1254,17 @@ export function SettingsTab({
                   }
                 }}
                 placeholder="5.00"
-                placeholderTextColor={colors.muted}
-                style={[styles.searchInput, { marginTop: 8 }]}
+                placeholderTextColor={currentTheme.textSecondary}
+                style={[dynamicStyles.searchInput, { marginTop: 8 }]}
                 keyboardType="decimal-pad"
               />
             )}
           </View>
 
           {/* Holiday Fee */}
-          <View style={styles.modalSection}>
+          <View style={dynamicStyles.modalSection}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.modalSectionTitle}>Frais de jour férié ($)</Text>
+              <Text style={dynamicStyles.modalSectionTitle}>Frais de jour férié ($)</Text>
               <Switch
                 value={localDeliveryFeeRules.holidayFee !== null}
                 onValueChange={(enabled) => {
@@ -1220,8 +1273,8 @@ export function SettingsTab({
                     holidayFee: enabled ? 5 : null,
                   });
                 }}
-                trackColor={{ false: '#E5E7EB', true: colors.accent }}
-                thumbColor="#FFFFFF"
+                trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+                thumbColor={currentTheme.surface}
               />
             </View>
             {localDeliveryFeeRules.holidayFee !== null && (
@@ -1249,17 +1302,17 @@ export function SettingsTab({
                   }
                 }}
                 placeholder="5.00"
-                placeholderTextColor={colors.muted}
-                style={[styles.searchInput, { marginTop: 8 }]}
+                placeholderTextColor={currentTheme.textSecondary}
+                style={[dynamicStyles.searchInput, { marginTop: 8 }]}
                 keyboardType="decimal-pad"
               />
             )}
           </View>
 
           {/* Minimum Order Surcharge */}
-          <View style={styles.modalSection}>
+          <View style={dynamicStyles.modalSection}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.modalSectionTitle}>Surcharge commande minimale</Text>
+              <Text style={dynamicStyles.modalSectionTitle}>Surcharge commande minimale</Text>
               <Switch
                 value={localDeliveryFeeRules.minimumOrderSurcharge !== null}
                 onValueChange={(enabled) => {
@@ -1268,14 +1321,14 @@ export function SettingsTab({
                     minimumOrderSurcharge: enabled ? { threshold: 15, surcharge: 2 } : null,
                   });
                 }}
-                trackColor={{ false: '#E5E7EB', true: colors.accent }}
-                thumbColor="#FFFFFF"
+                trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+                thumbColor={currentTheme.surface}
               />
             </View>
             {localDeliveryFeeRules.minimumOrderSurcharge !== null && (
               <View style={{ marginTop: 8, gap: 8 }}>
                 <View>
-                  <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Seuil ($)</Text>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Seuil ($)</Text>
                     <TextInput
                       value={minOrderThresholdText}
                       onChangeText={(text) => {
@@ -1324,13 +1377,13 @@ export function SettingsTab({
                         }
                       }}
                       placeholder="15"
-                      placeholderTextColor={colors.muted}
-                      style={styles.searchInput}
+                      placeholderTextColor={currentTheme.textSecondary}
+                      style={dynamicStyles.searchInput}
                       keyboardType="decimal-pad"
                     />
                 </View>
                 <View>
-                  <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Surcharge ($)</Text>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Surcharge ($)</Text>
                     <TextInput
                       value={minOrderSurchargeText}
                       onChangeText={(text) => {
@@ -1379,8 +1432,8 @@ export function SettingsTab({
                         }
                       }}
                       placeholder="2.00"
-                      placeholderTextColor={colors.muted}
-                      style={styles.searchInput}
+                      placeholderTextColor={currentTheme.textSecondary}
+                      style={dynamicStyles.searchInput}
                       keyboardType="decimal-pad"
                     />
                 </View>
@@ -1392,13 +1445,13 @@ export function SettingsTab({
             <TouchableOpacity
               style={[
                 styles.modalCloseButton,
-                { backgroundColor: '#E5E7EB' },
+                { backgroundColor: currentTheme.surfaceMuted },
                 (saving || savingDeliveryFeeRules) && { opacity: 0.6 },
               ]}
               onPress={handleCancelDeliveryFeeRules}
               disabled={saving || savingDeliveryFeeRules}
             >
-              <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+              <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
                 Annuler les changements
               </Text>
             </TouchableOpacity>
@@ -1416,12 +1469,12 @@ export function SettingsTab({
       )}
 
       {/* Payment Settings Section */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>💳 Paiements</Text>
+      <View style={dynamicStyles.sectionCard}>
+        <Text style={dynamicStyles.sectionTitle}>💳 Paiements</Text>
 
         {/* Pickup Payment Methods */}
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>À emporter</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>À emporter</Text>
           <View style={{ gap: 12 }}>
             {(['cash', 'card_terminal', 'card_online'] as PaymentMethod[]).map((method) => {
               const isSelected = localPaymentSettings.pickup.includes(method);
@@ -1439,8 +1492,8 @@ export function SettingsTab({
                     padding: 12,
                     borderRadius: 8,
                     borderWidth: 1,
-                    borderColor: isSelected ? colors.accent : '#E5E7EB',
-                    backgroundColor: isSelected ? '#F0F9FF' : '#FFFFFF',
+                    borderColor: isSelected ? currentTheme.pillActiveBg : currentTheme.border,
+                    backgroundColor: isSelected ? (isDark ? currentTheme.surfaceMuted : currentTheme.surfaceMuted) : currentTheme.surface,
                   }}
                   onPress={() => togglePaymentMethod('pickup', method)}
                 >
@@ -1450,7 +1503,7 @@ export function SettingsTab({
                       height: 20,
                       borderRadius: 4,
                       borderWidth: 2,
-                      borderColor: isSelected ? colors.accent : '#9CA3AF',
+                      borderColor: isSelected ? currentTheme.pillActiveBg : currentTheme.textSecondary,
                       backgroundColor: isSelected ? colors.accent : 'transparent',
                       marginRight: 12,
                       justifyContent: 'center',
@@ -1459,7 +1512,7 @@ export function SettingsTab({
                   >
                     {isSelected && <Text style={{ color: '#FFFFFF', fontSize: 12 }}>✓</Text>}
                   </View>
-                  <Text style={{ fontSize: 16, color: '#374151' }}>{methodLabels[method]}</Text>
+                  <Text style={{ fontSize: 16, color: currentTheme.textPrimary }}>{methodLabels[method]}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -1467,8 +1520,8 @@ export function SettingsTab({
         </View>
 
         {/* Delivery Payment Methods */}
-        <View style={styles.modalSection}>
-          <Text style={styles.modalSectionTitle}>Livraison</Text>
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Livraison</Text>
           <View style={{ gap: 12 }}>
             {(['cash', 'card_terminal', 'card_online'] as PaymentMethod[]).map((method) => {
               const isSelected = localPaymentSettings.delivery.includes(method);
@@ -1486,8 +1539,8 @@ export function SettingsTab({
                     padding: 12,
                     borderRadius: 8,
                     borderWidth: 1,
-                    borderColor: isSelected ? colors.accent : '#E5E7EB',
-                    backgroundColor: isSelected ? '#F0F9FF' : '#FFFFFF',
+                    borderColor: isSelected ? currentTheme.pillActiveBg : currentTheme.border,
+                    backgroundColor: isSelected ? (isDark ? currentTheme.surfaceMuted : currentTheme.surfaceMuted) : currentTheme.surface,
                   }}
                   onPress={() => togglePaymentMethod('delivery', method)}
                 >
@@ -1497,7 +1550,7 @@ export function SettingsTab({
                       height: 20,
                       borderRadius: 4,
                       borderWidth: 2,
-                      borderColor: isSelected ? colors.accent : '#9CA3AF',
+                      borderColor: isSelected ? currentTheme.pillActiveBg : currentTheme.textSecondary,
                       backgroundColor: isSelected ? colors.accent : 'transparent',
                       marginRight: 12,
                       justifyContent: 'center',
@@ -1506,7 +1559,7 @@ export function SettingsTab({
                   >
                     {isSelected && <Text style={{ color: '#FFFFFF', fontSize: 12 }}>✓</Text>}
                   </View>
-                  <Text style={{ fontSize: 16, color: '#374151' }}>{methodLabels[method]}</Text>
+                  <Text style={{ fontSize: 16, color: currentTheme.textPrimary }}>{methodLabels[method]}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -1517,13 +1570,13 @@ export function SettingsTab({
           <TouchableOpacity
             style={[
               styles.modalCloseButton,
-              { backgroundColor: '#E5E7EB' },
+              { backgroundColor: currentTheme.surfaceMuted },
               (saving || savingPaymentSettings) && { opacity: 0.6 },
             ]}
             onPress={handleCancelPaymentSettings}
             disabled={saving || savingPaymentSettings}
           >
-            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+            <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
               Annuler les changements
             </Text>
           </TouchableOpacity>
@@ -1540,8 +1593,8 @@ export function SettingsTab({
       </View>
 
       {/* Restaurant Hours Section */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>⏰ Horaires</Text>
+      <View style={dynamicStyles.sectionCard}>
+        <Text style={dynamicStyles.sectionTitle}>⏰ Horaires</Text>
 
         {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as Array<keyof RestaurantHours>).map((day) => {
           const dayHours = localRestaurantHours[day];
@@ -1556,37 +1609,37 @@ export function SettingsTab({
           };
 
           return (
-            <View key={day} style={[styles.modalSection, { marginBottom: 16 }]}>
+            <View key={day} style={[dynamicStyles.modalSection, { marginBottom: 16 }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <Text style={[styles.modalSectionTitle, { marginBottom: 0 }]}>{dayLabels[day]}</Text>
+                <Text style={[dynamicStyles.modalSectionTitle, { marginBottom: 0 }]}>{dayLabels[day]}</Text>
                 <Switch
                   value={dayHours.enabled}
                   onValueChange={() => toggleDayEnabled(day)}
-                  trackColor={{ false: '#E5E7EB', true: colors.accent }}
-                  thumbColor="#FFFFFF"
+                  trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+                  thumbColor={currentTheme.surface}
                 />
               </View>
 
               {dayHours.enabled && (
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Ouverture</Text>
+                    <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Ouverture</Text>
                     <TextInput
                       value={dayHours.open || ''}
                       onChangeText={(text) => updateDayHours(day, 'open', text)}
                       placeholder="09:00"
-                      placeholderTextColor={colors.muted}
-                      style={styles.searchInput}
+                      placeholderTextColor={currentTheme.textSecondary}
+                      style={dynamicStyles.searchInput}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Fermeture</Text>
+                    <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>Fermeture</Text>
                     <TextInput
                       value={dayHours.close || ''}
                       onChangeText={(text) => updateDayHours(day, 'close', text)}
                       placeholder="17:00"
-                      placeholderTextColor={colors.muted}
-                      style={styles.searchInput}
+                      placeholderTextColor={currentTheme.textSecondary}
+                      style={dynamicStyles.searchInput}
                     />
                   </View>
                 </View>
@@ -1599,13 +1652,13 @@ export function SettingsTab({
           <TouchableOpacity
             style={[
               styles.modalCloseButton,
-              { backgroundColor: '#E5E7EB' },
+              { backgroundColor: currentTheme.surfaceMuted },
               (saving || savingRestaurantHours) && { opacity: 0.6 },
             ]}
             onPress={handleCancelRestaurantHours}
             disabled={saving || savingRestaurantHours}
           >
-            <Text style={[styles.modalCloseText, { color: '#374151' }]}>
+            <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
               Annuler les changements
             </Text>
           </TouchableOpacity>
@@ -1620,6 +1673,47 @@ export function SettingsTab({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Dark Mode Section */}
+      {onToggleDarkMode && (
+        <View style={dynamicStyles.sectionCard}>
+          <Text style={dynamicStyles.sectionTitle}>🌙 Mode sombre</Text>
+
+          <View style={dynamicStyles.modalSection}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={dynamicStyles.modalSectionTitle}>Activer le mode sombre</Text>
+                <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginTop: 4 }}>
+                  Adapte les couleurs de l'interface pour la nuit
+                </Text>
+              </View>
+              <Switch
+                value={darkModeEnabled}
+                onValueChange={onToggleDarkMode}
+                trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+                thumbColor={currentTheme.surface}
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Logout Button */}
+      {onLogout && (
+        <View style={dynamicStyles.sectionCard}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: isDark ? '#7F1D1D' : '#FEE2E2', marginTop: 0 },
+            ]}
+            onPress={onLogout}
+          >
+            <Text style={[styles.modalCloseText, { color: isDark ? '#FFFFFF' : '#B91C1C' }]}>
+              Se déconnecter
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

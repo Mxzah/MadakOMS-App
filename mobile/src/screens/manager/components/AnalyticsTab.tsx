@@ -6,14 +6,17 @@ import * as Sharing from 'expo-sharing';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { colors } from '../../kitchen/constants';
 import { styles } from '../styles';
+import type { KitchenTheme } from '../../kitchen/types';
 
 type AnalyticsTabProps = {
   restaurantId: string;
+  theme?: KitchenTheme;
+  isDark?: boolean;
 };
 
 type DateRange = 'week' | 'month' | 'year' | 'custom';
 
-export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
+export function AnalyticsTab({ restaurantId, theme, isDark = false }: AnalyticsTabProps) {
   const [dateRange, setDateRange] = useState<DateRange>('month');
   const [showAllTopItems, setShowAllTopItems] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -24,6 +27,24 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
   });
   const [customEndDate, setCustomEndDate] = useState<Date>(new Date());
   const [pickingStartDate, setPickingStartDate] = useState(true);
+  const [tempStartDate, setTempStartDate] = useState<Date>(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 30);
+    return date;
+  });
+  const [tempEndDate, setTempEndDate] = useState<Date>(new Date());
+
+  // Utiliser le thème par défaut si non fourni
+  const currentTheme = theme || {
+    background: colors.background,
+    surface: colors.surface,
+    surfaceMuted: '#F6F7FB',
+    textPrimary: colors.dark,
+    textSecondary: colors.muted,
+    border: colors.border,
+    pillActiveBg: colors.accent,
+    pillActiveText: '#FFFFFF',
+  };
 
   const { analytics, loading, refetch } = useAnalytics(
     restaurantId,
@@ -158,7 +179,7 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={currentTheme.pillActiveBg} />
       </View>
     );
   }
@@ -167,17 +188,29 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
   const maxHourlyRevenue = Math.max(...analytics.hourlyStats.map((h) => h.revenue), 1);
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+    <ScrollView
+      style={[styles.scroll, { backgroundColor: currentTheme.background }]}
+      contentContainerStyle={styles.scrollContent}
+    >
       {/* Date Range Selector */}
-      <View style={styles.segmented}>
+      <View style={[styles.segmented, { backgroundColor: currentTheme.surfaceMuted }]}>
         {(['week', 'month', 'year', 'custom'] as DateRange[]).map((range) => {
           const isActive = dateRange === range;
           return (
             <TouchableOpacity
               key={range}
-              style={[styles.segment, isActive && styles.segmentActive]}
+              style={[
+                styles.segment,
+                isActive && {
+                  ...styles.segmentActive,
+                  backgroundColor: currentTheme.pillActiveBg,
+                },
+              ]}
               onPress={() => {
                 if (range === 'custom') {
+                  // Initialiser les dates temporaires avec les dates actuelles
+                  setTempStartDate(customStartDate);
+                  setTempEndDate(customEndDate);
                   setShowDatePicker(true);
                   setPickingStartDate(true);
                 } else {
@@ -185,7 +218,15 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
                 }
               }}
             >
-              <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+              <Text
+                style={[
+                  styles.segmentText,
+                  {
+                    color: isActive ? currentTheme.pillActiveText : currentTheme.textSecondary,
+                  },
+                  isActive && styles.segmentTextActive,
+                ]}
+              >
                 {range === 'week'
                   ? 'Semaine'
                   : range === 'month'
@@ -203,25 +244,32 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
       {dateRange === 'custom' && (
         <View
           style={{
-            backgroundColor: '#EFF6FF',
+            backgroundColor: isDark ? currentTheme.surfaceMuted : '#EFF6FF',
             padding: 12,
             borderRadius: 12,
             marginTop: 8,
             marginBottom: 8,
           }}
         >
-          <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 4 }}>Période sélectionnée :</Text>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>
+          <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 4 }}>
+            Période sélectionnée :
+          </Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
             {formatDate(customStartDate.toISOString())} - {formatDate(customEndDate.toISOString())}
           </Text>
           <TouchableOpacity
             onPress={() => {
+              // Initialiser les dates temporaires avec les dates actuelles
+              setTempStartDate(customStartDate);
+              setTempEndDate(customEndDate);
               setShowDatePicker(true);
               setPickingStartDate(true);
             }}
             style={{ marginTop: 8 }}
           >
-            <Text style={{ fontSize: 12, color: colors.accent, fontWeight: '600' }}>Modifier la période</Text>
+            <Text style={{ fontSize: 12, color: currentTheme.pillActiveBg, fontWeight: '600' }}>
+              Modifier la période
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -229,7 +277,7 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
       {/* Export Button */}
       <TouchableOpacity
         style={{
-          backgroundColor: colors.accent,
+          backgroundColor: currentTheme.pillActiveBg,
           paddingVertical: 12,
           paddingHorizontal: 16,
           borderRadius: 12,
@@ -238,50 +286,65 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
         }}
         onPress={exportToCSV}
       >
-        <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 14 }}>Exporter CSV</Text>
+        <Text style={{ color: currentTheme.pillActiveText, fontWeight: '600', fontSize: 14 }}>
+          Exporter CSV
+        </Text>
       </TouchableOpacity>
 
       {/* Revenue Summary */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Revenus totaux</Text>
+      <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+        <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>Revenus totaux</Text>
         <View style={{ marginTop: 12, gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.dark }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: currentTheme.textPrimary }}>
               {formatCurrency(analytics.revenue.total)}
             </Text>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
             <View>
-              <Text style={{ fontSize: 12, color: colors.muted }}>À emporter</Text>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>À emporter</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
                 {formatCurrency(analytics.revenue.pickup)}
               </Text>
             </View>
             <View>
-              <Text style={{ fontSize: 12, color: colors.muted }}>Livraison</Text>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Livraison</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
                 {formatCurrency(analytics.revenue.delivery)}
               </Text>
             </View>
           </View>
-          <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+          <View
+            style={{
+              marginTop: 8,
+              paddingTop: 8,
+              borderTopWidth: 1,
+              borderTopColor: currentTheme.border,
+            }}
+          >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontSize: 12, color: colors.muted }}>Sous-total</Text>
-              <Text style={{ fontSize: 12, color: colors.dark }}>{formatCurrency(analytics.revenue.subtotal)}</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Sous-total</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textPrimary }}>
+                {formatCurrency(analytics.revenue.subtotal)}
+              </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontSize: 12, color: colors.muted }}>Frais de livraison</Text>
-              <Text style={{ fontSize: 12, color: colors.dark }}>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Frais de livraison</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textPrimary }}>
                 {formatCurrency(analytics.revenue.deliveryFees)}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontSize: 12, color: colors.muted }}>Pourboires</Text>
-              <Text style={{ fontSize: 12, color: colors.dark }}>{formatCurrency(analytics.revenue.tips)}</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Pourboires</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textPrimary }}>
+                {formatCurrency(analytics.revenue.tips)}
+              </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 12, color: colors.muted }}>Taxes</Text>
-              <Text style={{ fontSize: 12, color: colors.dark }}>{formatCurrency(analytics.revenue.taxes)}</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Taxes</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textPrimary }}>
+                {formatCurrency(analytics.revenue.taxes)}
+              </Text>
             </View>
           </View>
         </View>
@@ -289,16 +352,23 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
 
       {/* Orders by Day */}
       {analytics.ordersByDay.length > 0 && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Commandes par jour</Text>
+        <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>Commandes par jour</Text>
           <View style={{ marginTop: 12, gap: 8 }}>
             {analytics.ordersByDay.slice(-7).map((day) => (
-              <View key={day.date} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View
+                key={day.date}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>{formatDate(day.date)}</Text>
-                  <Text style={{ fontSize: 12, color: colors.muted }}>{day.count} commande{day.count > 1 ? 's' : ''}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
+                    {formatDate(day.date)}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>
+                    {day.count} commande{day.count > 1 ? 's' : ''}
+                  </Text>
                 </View>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.accent }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveBg }}>
                   {formatCurrency(day.revenue)}
                 </Text>
               </View>
@@ -309,16 +379,23 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
 
       {/* Orders by Week */}
       {analytics.ordersByWeek.length > 0 && dateRange !== 'week' && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Commandes par semaine</Text>
+        <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>Commandes par semaine</Text>
           <View style={{ marginTop: 12, gap: 8 }}>
             {analytics.ordersByWeek.slice(-4).map((week) => (
-              <View key={week.week} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View
+                key={week.week}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>{formatWeek(week.week)}</Text>
-                  <Text style={{ fontSize: 12, color: colors.muted }}>{week.count} commande{week.count > 1 ? 's' : ''}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
+                    {formatWeek(week.week)}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>
+                    {week.count} commande{week.count > 1 ? 's' : ''}
+                  </Text>
                 </View>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.accent }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveBg }}>
                   {formatCurrency(week.revenue)}
                 </Text>
               </View>
@@ -329,16 +406,23 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
 
       {/* Top Items */}
       {analytics.topItems.length > 0 && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Articles les plus vendus</Text>
+        <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>Articles les plus vendus</Text>
           <View style={{ marginTop: 12, gap: 8 }}>
             {(showAllTopItems ? analytics.topItems : analytics.topItems.slice(0, 3)).map((item, index) => (
-              <View key={`${item.menuItemId || item.name}-${index}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View
+                key={`${item.menuItemId || item.name}-${index}`}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>{item.name}</Text>
-                  <Text style={{ fontSize: 12, color: colors.muted }}>{item.quantity} vendu{item.quantity > 1 ? 's' : ''}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
+                    {item.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>
+                    {item.quantity} vendu{item.quantity > 1 ? 's' : ''}
+                  </Text>
                 </View>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.accent }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveBg }}>
                   {formatCurrency(item.revenue)}
                 </Text>
               </View>
@@ -353,7 +437,7 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
                 alignItems: 'center',
               }}
             >
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.accent }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveBg }}>
                 {showAllTopItems ? 'Afficher moins' : 'Afficher plus'}
               </Text>
             </TouchableOpacity>
@@ -362,27 +446,40 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
       )}
 
       {/* Cancelled/Failed Stats */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Commandes annulées/échouées</Text>
+      <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+        <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>
+          Commandes annulées/échouées
+        </Text>
         <View style={{ marginTop: 12, gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 14, color: colors.dark }}>Annulées</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#B91C1C' }}>{analytics.cancelledFailed.cancelled}</Text>
+            <Text style={{ fontSize: 14, color: currentTheme.textPrimary }}>Annulées</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#B91C1C' }}>
+              {analytics.cancelledFailed.cancelled}
+            </Text>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 14, color: colors.dark }}>Échouées</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#B91C1C' }}>{analytics.cancelledFailed.failed}</Text>
+            <Text style={{ fontSize: 14, color: currentTheme.textPrimary }}>Échouées</Text>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#B91C1C' }}>
+              {analytics.cancelledFailed.failed}
+            </Text>
           </View>
-          <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+          <View
+            style={{
+              marginTop: 8,
+              paddingTop: 8,
+              borderTopWidth: 1,
+              borderTopColor: currentTheme.border,
+            }}
+          >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>Total</Text>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>Total</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
                 {analytics.cancelledFailed.total}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-              <Text style={{ fontSize: 12, color: colors.muted }}>Taux d'annulation</Text>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.muted }}>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Taux d'annulation</Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: currentTheme.textSecondary }}>
                 {analytics.cancelledFailed.cancellationRate.toFixed(1)}%
               </Text>
             </View>
@@ -392,8 +489,8 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
 
       {/* Hourly Heatmap */}
       {analytics.hourlyStats.length > 0 && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Heures d'affluence</Text>
+        <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>Heures d'affluence</Text>
           <View style={{ marginTop: 12, gap: 6 }}>
             {analytics.hourlyStats.map((hour) => {
               const intensity = hour.count / maxHourlyCount;
@@ -401,17 +498,17 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
               return (
                 <View key={hour.hour} style={{ marginBottom: 4 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={{ fontSize: 12, color: colors.dark, width: 40 }}>
+                    <Text style={{ fontSize: 12, color: currentTheme.textPrimary, width: 40 }}>
                       {String(hour.hour).padStart(2, '0')}h
                     </Text>
-                    <Text style={{ fontSize: 12, color: colors.muted, flex: 1, textAlign: 'right' }}>
+                    <Text style={{ fontSize: 12, color: currentTheme.textSecondary, flex: 1, textAlign: 'right' }}>
                       {hour.count} commande{hour.count > 1 ? 's' : ''} · {formatCurrency(hour.revenue)}
                     </Text>
                   </View>
                   <View
                     style={{
                       height: 20,
-                      backgroundColor: colors.border,
+                      backgroundColor: currentTheme.border,
                       borderRadius: 4,
                       overflow: 'hidden',
                     }}
@@ -420,7 +517,7 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
                       style={{
                         height: '100%',
                         width: `${barWidthPercent}%`,
-                        backgroundColor: colors.accent,
+                        backgroundColor: currentTheme.pillActiveBg,
                         opacity: 0.3 + intensity * 0.7,
                       }}
                     />
@@ -434,26 +531,30 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
 
       {/* Driver Performance */}
       {analytics.driverPerformance.length > 0 && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Performance des chauffeurs</Text>
+        <View style={[styles.sectionCard, { backgroundColor: currentTheme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: currentTheme.textPrimary }]}>
+            Performance des chauffeurs
+          </Text>
           <View style={{ marginTop: 12, gap: 8 }}>
             {analytics.driverPerformance.map((driver) => (
               <View key={driver.driverId} style={{ marginBottom: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>{driver.driverName}</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.accent }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>
+                    {driver.driverName}
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveBg }}>
                     {driver.ordersCompleted} commande{driver.ordersCompleted > 1 ? 's' : ''}
                   </Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 12, color: colors.muted }}>Pourboires totaux</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.dark }}>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Pourboires totaux</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: currentTheme.textPrimary }}>
                     {formatCurrency(driver.totalTips)}
                   </Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 12, color: colors.muted }}>Pourboire moyen</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.dark }}>
+                  <Text style={{ fontSize: 12, color: currentTheme.textSecondary }}>Pourboire moyen</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: currentTheme.textPrimary }}>
                     {formatCurrency(driver.averageTip)}
                   </Text>
                 </View>
@@ -480,37 +581,29 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
         >
           <Pressable
             style={{
-              backgroundColor: '#FFFFFF',
+              backgroundColor: currentTheme.surface,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               padding: 24,
             }}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.dark, marginBottom: 16 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: currentTheme.textPrimary, marginBottom: 16 }}>
               {pickingStartDate ? 'Sélectionner la date de début' : 'Sélectionner la date de fin'}
             </Text>
 
             <DateTimePicker
-              value={pickingStartDate ? customStartDate : customEndDate}
+              value={pickingStartDate ? tempStartDate : tempEndDate}
               mode="date"
               display="spinner"
+              themeVariant={isDark ? 'dark' : 'light'}
               onChange={(event, selectedDate) => {
-                if (selectedDate) {
+                // Ne mettre à jour que l'état temporaire, ne pas confirmer automatiquement
+                if (selectedDate && event.type !== 'dismissed') {
                   if (pickingStartDate) {
-                    setCustomStartDate(selectedDate);
-                    if (selectedDate > customEndDate) {
-                      setCustomEndDate(selectedDate);
-                    }
-                    setPickingStartDate(false);
+                    setTempStartDate(selectedDate);
                   } else {
-                    if (selectedDate >= customStartDate) {
-                      setCustomEndDate(selectedDate);
-                      setShowDatePicker(false);
-                      setDateRange('custom');
-                    } else {
-                      Alert.alert('Erreur', 'La date de fin doit être après la date de début.');
-                    }
+                    setTempEndDate(selectedDate);
                   }
                 }
               }}
@@ -523,24 +616,48 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
                   flex: 1,
                   paddingVertical: 12,
                   borderRadius: 12,
-                  backgroundColor: colors.border,
+                  backgroundColor: currentTheme.surfaceMuted,
                   alignItems: 'center',
                 }}
                 onPress={() => setShowDatePicker(false)}
               >
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.dark }}>Annuler</Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.textPrimary }}>Annuler</Text>
               </TouchableOpacity>
-              {!pickingStartDate && (
+              {pickingStartDate ? (
                 <TouchableOpacity
                   style={{
                     flex: 1,
                     paddingVertical: 12,
                     borderRadius: 12,
-                    backgroundColor: colors.accent,
+                    backgroundColor: currentTheme.pillActiveBg,
                     alignItems: 'center',
                   }}
                   onPress={() => {
-                    if (customEndDate >= customStartDate) {
+                    setCustomStartDate(tempStartDate);
+                    if (tempStartDate > customEndDate) {
+                      setCustomEndDate(tempStartDate);
+                      setTempEndDate(tempStartDate);
+                    }
+                    setPickingStartDate(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveText }}>
+                    Suivant
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    backgroundColor: currentTheme.pillActiveBg,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => {
+                    if (tempEndDate >= tempStartDate) {
+                      setCustomStartDate(tempStartDate);
+                      setCustomEndDate(tempEndDate);
                       setShowDatePicker(false);
                       setDateRange('custom');
                     } else {
@@ -548,7 +665,9 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
                     }
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#FFFFFF' }}>Confirmer</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: currentTheme.pillActiveText }}>
+                    Confirmer
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
