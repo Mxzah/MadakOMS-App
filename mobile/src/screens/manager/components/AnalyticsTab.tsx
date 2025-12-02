@@ -50,10 +50,12 @@ export function AnalyticsTab({ restaurantId }: AnalyticsTabProps) {
 
   const formatWeek = (weekKey: string) => {
     // weekKey is "YYYY-MM-DD" (Monday of the week)
+    // Ajouter 1 jour à la date de début et à la date de fin pour l'affichage UI seulement
     const date = new Date(weekKey);
+    date.setDate(date.getDate() + 1); // +1 jour à la date de début
     const endDate = new Date(date);
-    endDate.setDate(endDate.getDate() + 6);
-    return `${formatDate(weekKey)} - ${formatDate(endDate.toISOString().split('T')[0])}`;
+    endDate.setDate(endDate.getDate() + 6); // +6 jours pour obtenir le dimanche
+    return `${formatDate(date.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}`;
   };
 
   const exportToCSV = useCallback(async () => {

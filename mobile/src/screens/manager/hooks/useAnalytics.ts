@@ -378,8 +378,7 @@ export function useAnalytics(
         // Fallback: utiliser la conversion manuelle (pour compatibilité)
         torontoDate = getTorontoDate(order.placedAt);
       }
-      // Ajouter 1 jour à la date pour l'affichage dans l'UI
-      // On crée une nouvelle date avec +1 jour
+      // Ajouter 1 jour à la date pour l'affichage dans l'UI (seulement pour les commandes par jour)
       const displayDate = new Date(torontoDate.year, torontoDate.month - 1, torontoDate.day);
       displayDate.setDate(displayDate.getDate() + 1);
       const displayYear = displayDate.getFullYear();
@@ -393,7 +392,7 @@ export function useAnalytics(
       ordersByDayMap.set(dateKey, dayStats);
 
       // Commandes par semaine - Calculer le lundi de la semaine en heure Toronto
-      // Créer une date à partir des composants Toronto
+      // Utiliser torontoDate directement (sans +1 jour)
       const weekStartDate = new Date(Date.UTC(torontoDate.year, torontoDate.month - 1, torontoDate.day));
       const dayOfWeek = weekStartDate.getUTCDay();
       const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -453,7 +452,27 @@ export function useAnalytics(
       .map(([date, stats]) => ({ date, ...stats }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    const ordersByWeek: OrdersByWeek[] = Array.from(ordersByWeekMap.entries())
+    // Filtrer les semaines selon les dates personnalisées
+    let filteredWeeks = Array.from(ordersByWeekMap.entries());
+    
+    if (dateRange === 'custom' && customStartDate && customEndDate) {
+      // Filtrer pour ne garder que les semaines qui chevauchent la période
+      // Une semaine chevauche si elle contient au moins un jour de la période
+      // C'est-à-dire si: (lundi <= customEndDate) ET (dimanche >= customStartDate)
+      filteredWeeks = filteredWeeks.filter(([weekKey]) => {
+        const weekMonday = new Date(weekKey);
+        weekMonday.setHours(0, 0, 0, 0);
+        const weekSunday = new Date(weekMonday);
+        weekSunday.setDate(weekSunday.getDate() + 6);
+        weekSunday.setHours(23, 59, 59, 999);
+        
+        // La semaine chevauche si son début est avant ou égal à la fin de la période
+        // ET si sa fin est après ou égale au début de la période
+        return weekMonday <= customEndDate && weekSunday >= customStartDate;
+      });
+    }
+    
+    const ordersByWeek: OrdersByWeek[] = filteredWeeks
       .map(([week, stats]) => ({ week, ...stats }))
       .sort((a, b) => a.week.localeCompare(b.week));
 
@@ -491,7 +510,7 @@ export function useAnalytics(
       driverPerformance,
       hourlyStats,
     };
-  }, [orders]);
+  }, [orders, dateRange, customStartDate, customEndDate]);
 
   return {
     analytics,
