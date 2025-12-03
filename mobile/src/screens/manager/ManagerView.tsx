@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KitchenOrder } from '../../types/orders';
 import { AddStaffModal } from './components/AddStaffModal';
 import { OrderDetailModal } from './components/OrderDetailModal';

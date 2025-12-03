@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -239,7 +240,7 @@ export function OrdersTab({
       return;
     }
 
-    const eventPayload: Record<string, any> = { status };
+      const eventPayload: Record<string, any> = { status };
     if (cancellationReason) {
       eventPayload.cancellation_reason = cancellationReason;
     }
@@ -601,9 +602,15 @@ function OrderDetailModal({
                 </TouchableOpacity>
               )}
               {order.status === 'received' && kitchenMode !== 'chef' && (
-                <TouchableOpacity style={styles.primaryAction} onPress={onAccept}>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.primaryAction,
+                    pressed && { opacity: 0.7 }
+                  ]} 
+                  onPress={onAccept}
+                >
                   <Text style={styles.primaryActionText}>Accepter & préparer</Text>
-                </TouchableOpacity>
+                </Pressable>
               )}
               {order.status === 'preparing' && (
                 <TouchableOpacity
