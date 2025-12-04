@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { supabase } from './src/lib/supabase';
+import { supabase, configuredRestaurantId } from './src/lib/supabase';
 import { DeliveryView } from './src/screens/DeliveryView';
 import { KitchenView } from './src/screens/KitchenView';
 import { ManagerView } from './src/screens/manager/ManagerView';
@@ -36,8 +36,42 @@ const colors = {
 };
 
 const STAFF_EMAIL_DOMAIN = '@madak.internal';
-const usernameToEmail = (value: string) =>
-  `${value.trim().toLowerCase().replace(/\s+/g, '')}${STAFF_EMAIL_DOMAIN}`;
+
+// Normalise le slug du restaurant pour l'utiliser dans l'email
+const normalizeRestaurantSlug = (slug: string): string => {
+  return slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
+};
+
+// Génère le domaine email basé sur le slug du restaurant
+const getRestaurantEmailDomain = (restaurantSlug: string): string => {
+  const normalized = normalizeRestaurantSlug(restaurantSlug);
+  return `@madak-${normalized}.internal`;
+};
+
+// Convertit un username en email, en essayant d'abord le format avec restaurant si disponible
+const usernameToEmail = async (value: string, restaurantId: string | null = null): Promise<string> => {
+  const normalizedUsername = value.trim().toLowerCase().replace(/\s+/g, '');
+  
+  // Si un restaurantId est configuré, récupérer le slug et utiliser le nouveau format
+  if (restaurantId) {
+    try {
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('slug')
+        .eq('id', restaurantId)
+        .single();
+      
+      if (restaurant?.slug) {
+        return `${normalizedUsername}${getRestaurantEmailDomain(restaurant.slug)}`;
+      }
+    } catch (err) {
+      console.warn('Could not fetch restaurant slug, falling back to old format:', err);
+    }
+  }
+  
+  // Format ancien pour la compatibilité
+  return `${normalizedUsername}${STAFF_EMAIL_DOMAIN}`;
+};
 
 const roles = [
   { id: 'cook', label: 'Cuisine' },
@@ -110,13 +144,30 @@ export default function App() {
     setFeedback(null);
 
     try {
-      const pseudoEmail = usernameToEmail(username);
-      const { error } = await supabase.auth.signInWithPassword({
+      // Essayer d'abord avec le format basé sur le restaurant si configuré
+      let pseudoEmail = await usernameToEmail(username, configuredRestaurantId);
+      let { error } = await supabase.auth.signInWithPassword({
         email: pseudoEmail,
         password,
       });
 
-      if (error) {
+      // Si l'authentification échoue et qu'on a utilisé le nouveau format, essayer l'ancien format
+      if (error && configuredRestaurantId) {
+        const normalizedUsername = username.trim().toLowerCase().replace(/\s+/g, '');
+        const oldFormatEmail = `${normalizedUsername}${STAFF_EMAIL_DOMAIN}`;
+        const { error: oldFormatError } = await supabase.auth.signInWithPassword({
+          email: oldFormatEmail,
+          password,
+        });
+        
+        if (!oldFormatError) {
+          // L'ancien format a fonctionné, continuer avec
+          error = null;
+        } else {
+          // Les deux formats ont échoué, utiliser l'erreur originale
+          throw error;
+        }
+      } else if (error) {
         throw error;
       }
 
@@ -128,6 +179,14 @@ export default function App() {
       }
 
       const staffRecord = await fetchStaffProfile(userId);
+
+      // Vérifier que l'utilisateur appartient au restaurant configuré
+      if (configuredRestaurantId && staffRecord.restaurant_id !== configuredRestaurantId) {
+        await supabase.auth.signOut();
+        throw new Error(
+          'Ce compte n\'est pas associé au restaurant configuré pour cette application. Contactez un administrateur.'
+        );
+      }
 
       if (staffRecord.role !== selectedRole) {
         await supabase.auth.signOut();
@@ -197,6 +256,20 @@ export default function App() {
           if (!isMounted) {
             return;
           }
+
+          // Vérifier que l'utilisateur appartient au restaurant configuré
+          if (configuredRestaurantId && staffRecord.restaurant_id !== configuredRestaurantId) {
+            // Déconnecter l'utilisateur si le restaurant ne correspond pas
+            await supabase.auth.signOut();
+            if (isMounted) {
+              setFeedback({
+                type: 'error',
+                message: 'Ce compte n\'est pas associé au restaurant configuré pour cette application. Contactez un administrateur.',
+              });
+            }
+            return;
+          }
+
           const restaurant = staffRecord.restaurant as any;
 
           // Stocker les informations d'horaire pour la vérification périodique

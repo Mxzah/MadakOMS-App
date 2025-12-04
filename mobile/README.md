@@ -28,6 +28,20 @@ This Expo project bootstraps the internal operations app (cook, delivery, manage
    ```
    > These values power the client defined in `src/lib/supabase.ts`. They can be rotated without rebuilding the app.
 
+3. (Optional) Configure restaurant restriction by adding `restaurantId` to `app.json`:
+   ```json
+   {
+     "expo": {
+       "extra": {
+         "supabaseUrl": "https://YOUR_PROJECT.supabase.co",
+         "supabaseAnonKey": "YOUR_SUPABASE_ANON_KEY",
+         "restaurantId": "your-restaurant-uuid-here"
+       }
+     }
+   }
+   ```
+   > **Restaurant Restriction**: If `restaurantId` is set, only staff accounts associated with that specific restaurant will be able to log in. This is useful when deploying the app to a specific restaurant location. If `restaurantId` is `null` or omitted, the restriction is disabled and any valid staff account can log in.
+
 ## Running the app
 
 ```bash
@@ -44,7 +58,8 @@ From the CLI you can press:
 
 - The login button uses `supabase.auth.signInWithPassword`.
 - AsyncStorage keeps the session between launches.
-- Role selector (`Cuisine`, `Livraison`, `Gestion`) determines the UI context; once authenticated, query Supabase for the staff record tied to the session’s `auth_user_id` to enforce permissions.
+- Role selector (`Cuisine`, `Livraison`, `Gestion`) determines the UI context; once authenticated, query Supabase for the staff record tied to the session's `auth_user_id` to enforce permissions.
+- **Restaurant validation**: If `restaurantId` is configured in `app.json`, the app verifies that the authenticated staff member's `restaurant_id` matches the configured value. If it doesn't match, the user is automatically signed out and shown an error message. This check happens both during login and when restoring an existing session.
 
 ## Provisioning staff without real emails
 

@@ -1,10 +1,20 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../../../lib/supabase';
 import { colors } from '../../kitchen/constants';
-import { STAFF_EMAIL_DOMAIN } from '../constants';
 import { styles } from '../styles';
 import type { KitchenTheme } from '../../kitchen/types';
+
+// Normalise le slug du restaurant pour l'utiliser dans l'email
+const normalizeRestaurantSlug = (slug: string): string => {
+  return slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
+};
+
+// Génère le domaine email basé sur le slug du restaurant
+const getRestaurantEmailDomain = (restaurantSlug: string): string => {
+  const normalized = normalizeRestaurantSlug(restaurantSlug);
+  return `@madak-${normalized}.internal`;
+};
 
 type AddStaffModalProps = {
   visible: boolean;
@@ -21,6 +31,7 @@ export function AddStaffModal({ visible, restaurantId, onClose, onSuccess, theme
   const [password, setPassword] = useState('');
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [restaurantSlug, setRestaurantSlug] = useState<string | null>(null);
 
   // Utiliser le thème par défaut si non fourni
   const currentTheme = theme || {
@@ -34,11 +45,37 @@ export function AddStaffModal({ visible, restaurantId, onClose, onSuccess, theme
     pillActiveText: '#FFFFFF',
   };
 
+  // Récupérer le slug du restaurant pour afficher le bon format d'email
+  useEffect(() => {
+    if (visible && restaurantId) {
+      supabase
+        .from('restaurants')
+        .select('slug')
+        .eq('id', restaurantId)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data?.slug) {
+            setRestaurantSlug(data.slug);
+          } else {
+            setRestaurantSlug(null);
+          }
+        });
+    }
+  }, [visible, restaurantId]);
+
   const generateRandomPassword = useCallback(() => {
     const random = Math.random().toString(36).slice(-6);
     const password = `Madak${random}!`;
     setPassword(password);
   }, []);
+
+  // Génère le domaine email à afficher
+  const getEmailDomain = (): string => {
+    if (restaurantSlug) {
+      return getRestaurantEmailDomain(restaurantSlug);
+    }
+    return '@madak.internal'; // Fallback vers l'ancien format
+  };
 
   const handleAddStaff = useCallback(async () => {
     if (!username.trim()) {
@@ -117,7 +154,7 @@ export function AddStaffModal({ visible, restaurantId, onClose, onSuccess, theme
               <Text style={[styles.modalMeta, { color: currentTheme.textSecondary }]}>
                 Un compte interne sera créé avec un courriel pseudo comme
                 <Text style={{ fontWeight: '600', color: currentTheme.textPrimary }}>
-                  {' '}nomutilisateur{STAFF_EMAIL_DOMAIN}
+                  {' '}nomutilisateur{getEmailDomain()}
                 </Text>.
               </Text>
 
