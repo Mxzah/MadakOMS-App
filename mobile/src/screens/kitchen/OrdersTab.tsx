@@ -28,6 +28,7 @@ import {
   getPriorityFlags,
   mapOrderRowToKitchenOrder,
 } from '../../utils/orderHelpers';
+import { sendStatusSMS } from '../../utils/smsHelpers';
 import { NOTIFICATION_SOUND_URL, colors, ORDER_FILTERS } from './constants';
 import type { KitchenTheme } from './types';
 import { styles } from './styles';
@@ -214,6 +215,11 @@ export function OrdersTab({
         console.warn('Impossible d\'enregistrer le journal des événements', eventError);
       }
 
+      // Envoyer le SMS au client après l'assignation (statut passe à 'preparing')
+      sendStatusSMS(orderId).catch((err) => {
+        console.error('Erreur lors de l\'envoi du SMS:', err);
+      });
+
       fetchOrders();
       setAssignOrder(null);
     },
@@ -258,6 +264,11 @@ export function OrdersTab({
     if (eventError) {
       console.warn('Impossible d\'enregistrer le journal des événements', eventError);
     }
+
+    // Envoyer le SMS au client après la mise à jour du statut
+    sendStatusSMS(orderId).catch((err) => {
+      console.error('Erreur lors de l\'envoi du SMS:', err);
+    });
 
     fetchOrders();
   };

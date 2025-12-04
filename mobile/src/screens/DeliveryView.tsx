@@ -32,6 +32,7 @@ import {
   formatDateTime,
   getCityFromAddress,
 } from '../utils/orderHelpers';
+import { sendStatusSMS } from '../utils/smsHelpers';
 
 const lightColors = {
   background: '#F5F6FB',
@@ -730,6 +731,11 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
 
               await logOrderEvent(candidate.id, 'assigned', { driver_id: staff.staffUserId });
 
+              // Envoyer le SMS au client après l'assignation
+              sendStatusSMS(candidate.id).catch((err) => {
+                console.error('Erreur lors de l\'envoi du SMS:', err);
+              });
+
               setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
               setDeliveryTab('current');
               setPreviewOrder(null);
@@ -760,6 +766,12 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           throw error;
         }
         await logOrderEvent(orderId, status, extraFields);
+        
+        // Envoyer le SMS au client après la mise à jour du statut
+        sendStatusSMS(orderId).catch((err) => {
+          console.error('Erreur lors de l\'envoi du SMS:', err);
+        });
+        
         fetchActiveOrders();
         fetchAvailableOrders();
         fetchHistoryOrders();
@@ -818,6 +830,11 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       if (eventError) {
         console.warn('Impossible d\'enregistrer le journal des événements', eventError);
       }
+
+      // Envoyer le SMS au client après l'assignation
+      sendStatusSMS(orderId).catch((err) => {
+        console.error('Erreur lors de l\'envoi du SMS:', err);
+      });
 
       fetchActiveOrders();
       fetchAvailableOrders();
