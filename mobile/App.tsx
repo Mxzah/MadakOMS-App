@@ -65,7 +65,7 @@ const usernameToEmail = async (value: string, restaurantId: string | null = null
         return `${normalizedUsername}${getRestaurantEmailDomain(restaurant.slug)}`;
       }
     } catch (err) {
-      console.warn('Could not fetch restaurant slug, falling back to old format:', err);
+      // Silently fall back to old format
     }
   }
   
@@ -181,11 +181,16 @@ export default function App() {
       const staffRecord = await fetchStaffProfile(userId);
 
       // Vérifier que l'utilisateur appartient au restaurant configuré
-      if (configuredRestaurantId && staffRecord.restaurant_id !== configuredRestaurantId) {
-        await supabase.auth.signOut();
-        throw new Error(
-          'Ce compte n\'est pas associé au restaurant configuré pour cette application. Contactez un administrateur.'
-        );
+      if (configuredRestaurantId) {
+        const configuredId = configuredRestaurantId.trim();
+        const staffRestaurantId = String(staffRecord.restaurant_id).trim();
+        
+        if (configuredId !== staffRestaurantId) {
+          await supabase.auth.signOut();
+          throw new Error(
+            'Identifiants invalides. Vérifiez votre nom d\'utilisateur et mot de passe.'
+          );
+        }
       }
 
       if (staffRecord.role !== selectedRole) {
@@ -258,16 +263,21 @@ export default function App() {
           }
 
           // Vérifier que l'utilisateur appartient au restaurant configuré
-          if (configuredRestaurantId && staffRecord.restaurant_id !== configuredRestaurantId) {
-            // Déconnecter l'utilisateur si le restaurant ne correspond pas
-            await supabase.auth.signOut();
-            if (isMounted) {
-              setFeedback({
-                type: 'error',
-                message: 'Ce compte n\'est pas associé au restaurant configuré pour cette application. Contactez un administrateur.',
-              });
+          if (configuredRestaurantId) {
+            const configuredId = configuredRestaurantId.trim();
+            const staffRestaurantId = String(staffRecord.restaurant_id).trim();
+            
+            if (configuredId !== staffRestaurantId) {
+              // Déconnecter l'utilisateur si le restaurant ne correspond pas
+              await supabase.auth.signOut();
+              if (isMounted) {
+                setFeedback({
+                  type: 'error',
+                  message: 'Votre session a expiré. Veuillez vous reconnecter.',
+                });
+              }
+              return;
             }
-            return;
           }
 
           const restaurant = staffRecord.restaurant as any;
