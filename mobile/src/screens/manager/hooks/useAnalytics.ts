@@ -51,6 +51,7 @@ export type AnalyticsOrder = {
   driverName: string | null;
   cookId: string | null;
   cookName: string | null;
+  paymentStatus?: string | null;
   items: Array<{
     id: string;
     name: string;
@@ -182,6 +183,7 @@ function mapOrderRowToAnalyticsOrder(row: any): AnalyticsOrder {
     driverName: driverName,
     cookId: row.cook_id ?? null,
     cookName: cookName,
+    paymentStatus: row.payment_status ?? null,
     items:
       (row.order_items || []).map((item: any) => ({
         id: item.id,
@@ -277,6 +279,9 @@ export function useAnalytics(
   }, [fetchOrders]);
 
   const analytics = useMemo((): AnalyticsData => {
+    // Filtrer les commandes remboursées - elles ne doivent pas être incluses dans les analytics
+    const nonRefundedOrders = orders.filter((order) => order.paymentStatus !== 'refunded');
+
     // Revenus
     const revenue: RevenueStats = {
       total: 0,
@@ -307,7 +312,7 @@ export function useAnalytics(
     // Stats par heure
     const hourlyMap = new Map<number, { count: number; revenue: number }>();
 
-    orders.forEach((order) => {
+    nonRefundedOrders.forEach((order) => {
       // Revenus
       revenue.total += order.total;
       revenue.subtotal += order.subtotal;
@@ -427,6 +432,17 @@ export function useAnalytics(
         failed += 1;
       }
 
+      // Stats par heure - Utiliser l'heure de Toronto
+      const hour = torontoDate.hour;
+      const hourStats = hourlyMap.get(hour) || { count: 0, revenue: 0 };
+      hourStats.count += 1;
+      hourStats.revenue += order.total;
+      hourlyMap.set(hour, hourStats);
+    });
+
+    // Performance des drivers - Utiliser TOUTES les commandes (y compris remboursées)
+    // pour refléter le travail réel effectué par les chauffeurs
+    orders.forEach((order) => {
       // Performance des drivers (seulement pour les commandes complétées avec driver)
       if (order.status === 'completed' && order.driverId && order.driverName) {
         const driverStats = driversMap.get(order.driverId) || {
@@ -438,13 +454,6 @@ export function useAnalytics(
         driverStats.totalTips += order.tipAmount;
         driversMap.set(order.driverId, driverStats);
       }
-
-      // Stats par heure - Utiliser l'heure de Toronto
-      const hour = torontoDate.hour;
-      const hourStats = hourlyMap.get(hour) || { count: 0, revenue: 0 };
-      hourStats.count += 1;
-      hourStats.revenue += order.total;
-      hourlyMap.set(hour, hourStats);
     });
 
     // Convertir les maps en arrays triés
@@ -492,7 +501,7 @@ export function useAnalytics(
       .map(([hour, stats]) => ({ hour, ...stats }))
       .sort((a, b) => a.hour - b.hour);
 
-    const totalOrders = orders.length;
+    const totalOrders = nonRefundedOrders.length;
     const cancelledFailed: CancelledFailedStats = {
       cancelled,
       failed,
@@ -501,7 +510,7 @@ export function useAnalytics(
     };
 
     return {
-      orders,
+      orders: nonRefundedOrders,
       revenue,
       ordersByDay,
       ordersByWeek,

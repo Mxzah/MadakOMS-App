@@ -1,6 +1,8 @@
-import { Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import type { KitchenOrder } from '../../../types/orders';
 import { formatAddress, formatDateTime, getCustomerEmail, getCustomerName, getCustomerPhone } from '../../../utils/orderHelpers';
+import { processRefund } from '../../../utils/refundHelpers';
 import { colors } from '../../kitchen/constants';
 import { styles } from '../styles';
 import type { KitchenTheme } from '../../kitchen/types';
@@ -13,6 +15,8 @@ type OrderDetailModalProps = {
 };
 
 export function OrderDetailModal({ order, onClose, theme, isDark = false }: OrderDetailModalProps) {
+  const [refunding, setRefunding] = useState(false);
+
   if (!order) return null;
 
   // Utiliser le thème par défaut si non fourni
@@ -25,6 +29,55 @@ export function OrderDetailModal({ order, onClose, theme, isDark = false }: Orde
     border: colors.border,
     pillActiveBg: colors.accent,
     pillActiveText: '#FFFFFF',
+  };
+
+  // Vérifier si la commande peut être remboursée (payée en ligne)
+  const canRefund = order.paymentMethod === 'card_online';
+
+  const handleRefund = async () => {
+    if (!order) return;
+
+    Alert.alert(
+      'Confirmer le remboursement',
+      `Voulez-vous vraiment rembourser la commande #${order.orderNumber ?? '—'} ?\n\nLe client sera remboursé via Stripe.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Rembourser',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setRefunding(true);
+              const result = await processRefund(order.id);
+
+              if (result?.success) {
+                Alert.alert(
+                  'Remboursement effectué',
+                  result.action === 'already_refunded'
+                    ? 'Cette commande avait déjà été remboursée.'
+                    : `Le remboursement de ${result.amount ? `$${result.amount.toFixed(2)}` : 'la commande'} a été traité avec succès.`,
+                  [{ text: 'OK', onPress: onClose }]
+                );
+              } else {
+                Alert.alert(
+                  'Erreur',
+                  result?.error || 'Impossible de traiter le remboursement. Veuillez réessayer.',
+                  [{ text: 'OK' }]
+                );
+              }
+            } catch (error) {
+              Alert.alert(
+                'Erreur',
+                'Une erreur est survenue lors du remboursement. Veuillez réessayer.',
+                [{ text: 'OK' }]
+              );
+            } finally {
+              setRefunding(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -79,6 +132,29 @@ export function OrderDetailModal({ order, onClose, theme, isDark = false }: Orde
                 </View>
               ))}
             </View>
+
+            {canRefund && (
+              <TouchableOpacity
+                style={[
+                  styles.modalCloseButton,
+                  { 
+                    backgroundColor: '#DC2626',
+                    marginBottom: 8,
+                    opacity: refunding ? 0.6 : 1,
+                  },
+                ]}
+                onPress={handleRefund}
+                disabled={refunding}
+              >
+                {refunding ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.modalCloseText, { color: '#FFFFFF' }]}>
+                    Rembourser
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[

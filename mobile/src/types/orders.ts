@@ -69,6 +69,7 @@ export type KitchenOrder = {
     email?: string | null;
   } | null;
   paymentMethod?: string | null;
+  paymentStatus?: string | null;
   tipAmount?: number | null;
   items: Array<{
     id: string;

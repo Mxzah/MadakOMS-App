@@ -1,6 +1,6 @@
 import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { KitchenOrder } from '../../../types/orders';
-import { formatDateTime, getCustomerName } from '../../../utils/orderHelpers';
+import { formatDateTime, formatOrderStatusDisplay, getCustomerName } from '../../../utils/orderHelpers';
 import { colors } from '../../kitchen/constants';
 import type { DateFilterId, FulfillmentFilterId } from '../types';
 import { styles } from '../styles';
@@ -173,7 +173,7 @@ export function OrdersTab({
                       </Text>
                     </View>
                     <Text style={[styles.orderStatus, { color: currentTheme.textSecondary }]}>
-                      {order.status}
+                      {formatOrderStatusDisplay(order)}
                     </Text>
                   </TouchableOpacity>
                 ))

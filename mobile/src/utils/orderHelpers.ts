@@ -23,7 +23,8 @@ export const ORDER_DETAIL_SELECT = `
     email
   ),
   payments!order_id (
-    method
+    method,
+    status
   ),
   order_items (
     id,
@@ -152,6 +153,7 @@ export const mapOrderRowToKitchenOrder = (row: any): KitchenOrder => {
         }
       : null,
     paymentMethod: paymentRaw?.method ?? null,
+    paymentStatus: paymentRaw?.status ?? null,
     tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
     items:
       row.order_items?.map((item: any) => ({
@@ -191,5 +193,31 @@ export const historyStatusStyle = (status: string) => {
     default:
       return { backgroundColor: '#1D4ED8', color: '#FFFFFF' };
   }
+};
+
+/**
+ * Formate le statut d'affichage d'une commande en tenant compte du remboursement
+ * @param order - La commande avec son statut et le statut de paiement
+ * @returns Le texte à afficher pour le statut
+ */
+export const formatOrderStatusDisplay = (order: { status: string; paymentStatus?: string | null }): string => {
+  // Si le paiement est remboursé, afficher "Remboursé" au lieu du statut
+  if (order.paymentStatus === 'refunded') {
+    return 'Remboursé';
+  }
+  
+  // Sinon, retourner le statut normal
+  const statusMap: Record<string, string> = {
+    received: 'Reçue',
+    preparing: 'En préparation',
+    ready: 'Prête',
+    assigned: 'Assignée',
+    enroute: 'En route',
+    completed: 'Terminée',
+    cancelled: 'Annulée',
+    failed: 'Échouée',
+  };
+  
+  return statusMap[order.status] || order.status;
 };
 
