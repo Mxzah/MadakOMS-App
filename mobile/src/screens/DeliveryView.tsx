@@ -772,6 +772,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           console.error('Erreur lors de l\'envoi du SMS:', err);
         });
         
+        // Note: Les remboursements Stripe sont gérés uniquement par la vue Cuisine, pas par les livreurs
+        
         fetchActiveOrders();
         fetchAvailableOrders();
         fetchHistoryOrders();

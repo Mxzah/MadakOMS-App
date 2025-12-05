@@ -29,6 +29,7 @@ import {
   mapOrderRowToKitchenOrder,
 } from '../../utils/orderHelpers';
 import { sendStatusSMS } from '../../utils/smsHelpers';
+import { processRefund } from '../../utils/refundHelpers';
 import { NOTIFICATION_SOUND_URL, colors, ORDER_FILTERS } from './constants';
 import type { KitchenTheme } from './types';
 import { styles } from './styles';
@@ -269,6 +270,13 @@ export function OrdersTab({
     sendStatusSMS(orderId).catch((err) => {
       console.error('Erreur lors de l\'envoi du SMS:', err);
     });
+
+    // Si la commande est annulée, traiter le remboursement Stripe
+    if (status === 'cancelled') {
+      processRefund(orderId).catch((err) => {
+        console.error('Erreur lors du remboursement:', err);
+      });
+    }
 
     fetchOrders();
   };

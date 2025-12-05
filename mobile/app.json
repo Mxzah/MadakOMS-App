@@ -29,7 +29,7 @@
     "extra": {
       "supabaseUrl": "https://jhiroxwatppflcintsvw.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpoaXJveHdhdHBwZmxjaW50c3Z3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2MDkyMDMsImV4cCI6MjA3OTE4NTIwM30.i_DAw8eEMcNstFMAZYTOt1P7eoY5wMiX1UrqXwKuktY",
-      "apiUrl": "http://localhost:3000",
+      "apiUrl": "http://192.168.2.13:3000",
       "restaurantId": "22222222-2222-2222-2222-222222222222"
     },
     "plugins": [
