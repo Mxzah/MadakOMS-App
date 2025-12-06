@@ -381,9 +381,10 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       const { data, error } = await supabase
         .from('orders')
         .select(
-          'id, order_number, status, delivery_name, delivery_address, scheduled_at, tip_amount, customer:customer_id(first_name, phone, email), payments!order_id(method)'
+          'id, order_number, status, delivery_name, delivery_address, scheduled_at, tip_amount, fulfillment, customer:customer_id(first_name, phone, email), payments!order_id(method)'
         )
         .eq('restaurant_id', staff.restaurantId)
+        .neq('fulfillment', 'pickup')
         .in('status', ['ready', 'assigned', 'enroute'])
         .order('placed_at', { ascending: true });
 
@@ -438,6 +439,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           delivery_name,
           delivery_address,
           status,
+          fulfillment,
           driver_id,
           drop_option,
           apartment_suite,
@@ -458,6 +460,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         `
       )
       .eq('restaurant_id', staff.restaurantId)
+      .neq('fulfillment', 'pickup')
       .in('status', statuses);
 
     // En mode Individuel, on filtre par driver_id
@@ -490,7 +493,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           customerEmail: customerInfo?.email ?? null,
           customerAddress: row.delivery_address?.address ?? 'Adresse à confirmer',
           itemsSummary: 'Détails disponibles après assignation',
-          fulfillment: 'delivery',
+          fulfillment: (row.fulfillment as 'delivery' | 'pickup') ?? 'delivery',
           paymentInfo: 'paid_online',
           eta: computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
           distance: computeDistanceLabel(driverLocation, destinationCoords, fallbackDistance),
@@ -574,6 +577,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
             id,
             order_number,
             restaurant_id,
+            fulfillment,
             updated_at,
             completed_at,
             cancelled_at,
@@ -606,6 +610,9 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       eventsData?.forEach((event: any) => {
         const order = Array.isArray(event.orders) ? event.orders[0] : event.orders;
         if (!order || order.restaurant_id !== staff.restaurantId) return;
+
+        // Filtrer les commandes en cueillette
+        if (order.fulfillment === 'pickup') return;
 
         const payload = event.payload || {};
         const status = payload.status;

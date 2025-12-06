@@ -229,7 +229,7 @@ export function OrdersTab({
 
   const updateOrderStatus = async (
     orderId: string,
-    status: KitchenBoardStatus | 'cancelled',
+    status: KitchenBoardStatus | 'cancelled' | 'completed',
     cancellationReason?: string
   ) => {
     const payload: Record<string, any> = { status };
@@ -239,6 +239,10 @@ export function OrdersTab({
     // Lorsqu'un cuisinier accepte une commande (statut passe à 'preparing'), on assigne son ID
     if (status === 'preparing') {
       payload.cook_id = staffUserId;
+    }
+    // Lorsqu'une commande est complétée, on met à jour completed_at
+    if (status === 'completed') {
+      payload.completed_at = new Date().toISOString();
     }
 
     const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
@@ -462,6 +466,24 @@ export function OrdersTab({
             ]
           );
         }}
+        onMarkPickedUp={() => {
+          if (!selectedOrder) return;
+          Alert.alert(
+            'Marquer récupéré',
+            `Confirmez-vous que la commande #${selectedOrder.orderNumber ?? '—'} a été récupérée ?`,
+            [
+              { text: 'Annuler', style: 'cancel' },
+              {
+                text: 'Confirmer',
+                style: 'default',
+                onPress: () => {
+                  updateOrderStatus(selectedOrder.id, 'completed');
+                  setSelectedOrder(null);
+                },
+              },
+            ]
+          );
+        }}
         onRefuse={() => {
           if (!selectedOrder) return;
           Alert.alert(
@@ -523,6 +545,7 @@ type OrderDetailModalProps = {
   onClose: () => void;
   onAccept: () => void;
   onMarkReady: () => void;
+  onMarkPickedUp: () => void;
   onRefuse: () => void;
   onAssign: () => void;
 };
@@ -536,6 +559,7 @@ function OrderDetailModal({
   onClose,
   onAccept,
   onMarkReady,
+  onMarkPickedUp,
   onRefuse,
   onAssign,
 }: OrderDetailModalProps) {
@@ -637,6 +661,14 @@ function OrderDetailModal({
                   onPress={onMarkReady}
                 >
                   <Text style={styles.primaryActionText}>Marquer prêt</Text>
+                </TouchableOpacity>
+              )}
+              {order.status === 'ready' && order.fulfillment === 'pickup' && activeFilter === 'ready' && (
+                <TouchableOpacity
+                  style={[styles.primaryAction, { backgroundColor: theme.pillActiveBg }]}
+                  onPress={onMarkPickedUp}
+                >
+                  <Text style={styles.primaryActionText}>Marquer récupéré</Text>
                 </TouchableOpacity>
               )}
               {order.status === 'received' && (
