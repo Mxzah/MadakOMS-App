@@ -182,7 +182,7 @@ const translatePaymentMethod = (paymentMethod: string): string => {
   if (lower === 'cash' || lower === 'especes' || lower === 'espèces') {
     return 'Espèces';
   }
-  if (lower === 'online' || lower === 'paid_online' || lower === 'payé en ligne') {
+  if (lower === 'card_online' || lower === 'online' || lower === 'paid_online' || lower === 'payé en ligne') {
     return 'Payé en ligne';
   }
   if (lower === 'pay_on_delivery' || lower === 'paiement à la livraison') {
@@ -1595,7 +1595,7 @@ function DeliveryCard({
   const isPreview = Boolean(onClose);
   const clientName = order.customerName ?? 'Client assigné';
   const clientPhone = order.customerPhone ?? '—';
-  const clientEmail = order.customerEmail ?? '—';
+  const clientEmail = order.customerEmail;
 
   // En mode Équipe ou Coordinateur, afficher le nom du livreur au lieu de la ville
   const headerRightLabel =
@@ -1729,7 +1729,9 @@ function DeliveryCard({
               <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>
                 Tél. {clientPhone}
               </Text>
-              <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>{clientEmail}</Text>
+              {clientEmail ? (
+                <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>{clientEmail}</Text>
+              ) : null}
             </View>
             {(order.apartmentSuite || order.dropOption || order.notes) && (
               <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border }}>

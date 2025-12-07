@@ -628,11 +628,6 @@ function OrderDetailModal({
                   <Text style={[styles.modalItemText, { color: theme.textPrimary }]}>
                     {formatPaymentMethod(order.paymentMethod)}
                   </Text>
-                  {order.tipAmount && order.tipAmount > 0 ? (
-                    <Text style={[styles.modalItemMeta, { color: theme.textSecondary, marginTop: 8 }]}>
-                      Pourboire : ${order.tipAmount.toFixed(2)}
-                    </Text>
-                  ) : null}
                 </View>
               ) : null}
 

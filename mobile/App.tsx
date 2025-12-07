@@ -25,14 +25,17 @@ import { extractRestaurantName } from './src/utils/orderHelpers';
 import { isWithinWorkHours, getWorkScheduleMessage } from './src/utils/workScheduleHelpers';
 
 const colors = {
-  background: '#F5F6FB',
+  background: '#F8FAFC',
   surface: '#FFFFFF',
-  dark: '#1B1C1F',
-  muted: '#6B7280',
-  border: '#E5E7EB',
+  dark: '#0F172A',
+  muted: '#64748B',
+  border: '#E2E8F0',
   accent: '#2563EB',
+  accentLight: '#3B82F6',
   success: '#16A34A',
   danger: '#DC2626',
+  gradientStart: '#1E40AF',
+  gradientEnd: '#3B82F6',
 };
 
 const STAFF_EMAIL_DOMAIN = '@madak.internal';
@@ -398,21 +401,27 @@ export default function App() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.shellCard}>
+            <View style={styles.container}>
               <View style={styles.hero}>
+                <View style={styles.logoContainer}>
+                  <View style={styles.logoCircle}>
+                    <Text style={styles.logoText}>M</Text>
+                  </View>
+                </View>
                 <Text style={styles.heroTitle}>MadakOMS</Text>
                 <Text style={styles.heroSubtitle}>
-                  Application interne pour accepter, cuisiner et livrer en temps réel.
+                  Application interne pour accepter, cuisiner et livrer en temps réel
                 </Text>
               </View>
 
               <View style={styles.formCard}>
-                <Text style={styles.cardEyebrow}>Connexion</Text>
-                <Text style={styles.cardTitle}>Identifiez-vous</Text>
-                <Text style={styles.cardSubtitle}>
-                  Utilisez vos accès gérés par le responsable pour rejoindre la cuisine, la livraison
-                  ou la gestion.
-                </Text>
+                <View style={styles.formHeader}>
+                  <Text style={styles.cardEyebrow}>CONNEXION</Text>
+                  <Text style={styles.cardTitle}>Identifiez-vous</Text>
+                  <Text style={styles.cardSubtitle}>
+                    Utilisez vos accès gérés par le responsable pour rejoindre la cuisine, la livraison ou la gestion
+                  </Text>
+                </View>
 
                 <View style={styles.segmentedControl}>
                   {roles.map((role) => {
@@ -450,12 +459,7 @@ export default function App() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <View style={styles.passwordLabelRow}>
-                    <Text style={styles.inputLabel}>Mot de passe</Text>
-                    <TouchableOpacity>
-                      <Text style={styles.linkText}>Mot de passe oublié ?</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <Text style={styles.inputLabel}>Mot de passe</Text>
                   <TextInput
                     value={password}
                     onChangeText={setPassword}
@@ -522,94 +526,139 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   scrollContent: {
-    padding: 24,
-  },
-  shellCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 32,
+    flexGrow: 1,
     padding: 20,
-    gap: 20,
-    shadowColor: '#000000',
-    shadowOpacity: 0.05,
-    shadowRadius: 25,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 5,
+    paddingTop: 40,
+    paddingBottom: 40,
+    justifyContent: 'center',
+  },
+  container: {
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
+    gap: 24,
   },
   hero: {
-    backgroundColor: colors.dark,
-    borderRadius: 24,
-    padding: 24,
-    gap: 16,
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  logoContainer: {
+    marginBottom: 16,
+  },
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  logoText: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
   heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: '700',
+    color: colors.dark,
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   heroSubtitle: {
-    color: '#E5E7EB',
+    color: colors.muted,
     fontSize: 15,
-    marginTop: 6,
     lineHeight: 22,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   formCard: {
     backgroundColor: colors.surface,
     borderRadius: 24,
-    padding: 24,
-    gap: 16,
+    padding: 28,
     shadowColor: '#000000',
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  formHeader: {
+    marginBottom: 8,
+    gap: 8,
   },
   cardEyebrow: {
-    color: colors.muted,
-    fontSize: 13,
+    color: colors.accent,
+    fontSize: 11,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   cardTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
     color: colors.dark,
+    letterSpacing: -0.5,
+    marginBottom: 4,
   },
   cardSubtitle: {
     fontSize: 15,
     color: colors.muted,
     lineHeight: 22,
+    marginTop: 4,
   },
   segmentedControl: {
     flexDirection: 'row',
-    borderRadius: 16,
+    borderRadius: 14,
     backgroundColor: colors.background,
-    padding: 4,
-    gap: 4,
+    padding: 5,
+    gap: 5,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   segment: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    transition: 'all 0.2s',
   },
   segmentSelected: {
     backgroundColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   segmentText: {
     color: colors.muted,
     fontWeight: '600',
+    fontSize: 14,
   },
   segmentTextSelected: {
     color: '#FFFFFF',
+    fontWeight: '700',
   },
   inputGroup: {
-    gap: 8,
+    gap: 10,
+    marginBottom: 4,
   },
   inputLabel: {
     color: colors.dark,
     fontWeight: '600',
     fontSize: 14,
+    marginBottom: 2,
   },
   passwordLabelRow: {
     flexDirection: 'row',
@@ -622,28 +671,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
+    paddingVertical: 15,
+    fontSize: 16,
     backgroundColor: '#FFFFFF',
     color: colors.dark,
+    fontWeight: '500',
   },
   feedback: {
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    marginTop: 4,
   },
   feedbackSuccess: {
     backgroundColor: '#ECFDF5',
+    borderColor: '#BBF7D0',
   },
   feedbackError: {
     backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   feedbackText: {
     fontSize: 14,
     fontWeight: '600',
+    lineHeight: 20,
   },
   feedbackTextSuccess: {
     color: colors.success,
@@ -653,26 +708,39 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: colors.accent,
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: 17,
+    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   primaryButtonDisabled: {
     opacity: 0.6,
+    shadowOpacity: 0.1,
   },
   primaryButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 16,
+    letterSpacing: 0.3,
   },
   helperTextWrapper: {
-    marginTop: 8,
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   helperText: {
     textAlign: 'center',
     color: colors.muted,
     fontSize: 13,
     lineHeight: 20,
+    fontWeight: '500',
   },
   hydratingContainer: {
     flex: 1,

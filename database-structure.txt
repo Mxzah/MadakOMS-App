@@ -1,270 +1,235 @@
--- Enable UUID helpers if not already available
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- =============================
--- Core Restaurant + Settings
--- =============================
-CREATE TABLE restaurants (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug            TEXT UNIQUE NOT NULL,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    logo_url        TEXT,
-    hero_image_url  TEXT,
-    phone           TEXT,
-    email           TEXT,
-    timezone        TEXT NOT NULL DEFAULT 'America/Toronto',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.customer_addresses (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  customer_id uuid,
+  label text,
+  line1 text NOT NULL,
+  line2 text,
+  city text NOT NULL,
+  province text NOT NULL,
+  postal_code text NOT NULL,
+  country text NOT NULL DEFAULT 'Canada'::text,
+  lat numeric,
+  lng numeric,
+  is_default boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT customer_addresses_pkey PRIMARY KEY (id),
+  CONSTRAINT customer_addresses_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
 );
-
-CREATE TABLE restaurant_settings (
-    restaurant_id            UUID PRIMARY KEY REFERENCES restaurants(id) ON DELETE CASCADE,
-    address_line1            TEXT,
-    address_line2            TEXT,
-    city                     TEXT,
-    province                 TEXT,
-    postal_code              TEXT,
-    country                  TEXT DEFAULT 'Canada',
-    lat                      DECIMAL(10,7),
-    lng                      DECIMAL(10,7),
-    delivery_radius_km       NUMERIC(4,1),
-    delivery_zones_geojson   JSONB,
-    service_types            JSONB NOT NULL DEFAULT '["delivery","pickup"]'::JSONB,
-    payment_methods_accepted JSONB NOT NULL DEFAULT '["card_online","card_terminal","cash"]'::JSONB,
-    hours_json               JSONB,
-    ordering_enabled         BOOLEAN NOT NULL DEFAULT TRUE,
-    min_order_amount         NUMERIC(8,2),
-    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.customers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text,
+  phone text,
+  first_name text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT customers_pkey PRIMARY KEY (id)
 );
-
--- =============================
--- Menu Structure
--- =============================
-CREATE TABLE menu_categories (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    restaurant_id   UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    sort_order      INT NOT NULL DEFAULT 0,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.driver_locations (
+  staff_id uuid NOT NULL,
+  lat numeric,
+  lng numeric,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT driver_locations_pkey PRIMARY KEY (staff_id),
+  CONSTRAINT driver_locations_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES public.staff_users(id)
 );
-
-CREATE TABLE menu_items (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    restaurant_id   UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-    category_id     UUID NOT NULL REFERENCES menu_categories(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    image_url       TEXT,
-    base_price      NUMERIC(8,2) NOT NULL,
-    calories        INT,
-    is_popular      BOOLEAN NOT NULL DEFAULT FALSE,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    sort_order      INT NOT NULL DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.menu_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  name text NOT NULL,
+  description text,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT menu_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT menu_categories_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
-
-CREATE TABLE modifier_groups (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    restaurant_id   UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-    menu_item_id    UUID NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    selection_type  TEXT NOT NULL DEFAULT 'single', -- single | multi
-    min_options     INT NOT NULL DEFAULT 0,
-    max_options     INT,
-    sort_order      INT NOT NULL DEFAULT 0,
-    required        BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.menu_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  category_id uuid NOT NULL,
+  name text NOT NULL,
+  description text,
+  image_url text,
+  base_price numeric NOT NULL,
+  calories integer,
+  is_popular boolean NOT NULL DEFAULT false,
+  is_active boolean NOT NULL DEFAULT true,
+  sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT menu_items_pkey PRIMARY KEY (id),
+  CONSTRAINT menu_items_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT menu_items_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.menu_categories(id)
 );
-
-CREATE TABLE modifier_options (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    group_id        UUID NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    price_delta     NUMERIC(8,2) NOT NULL DEFAULT 0.00,
-    sort_order      INT NOT NULL DEFAULT 0,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.modifier_groups (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  menu_item_id uuid NOT NULL,
+  name text NOT NULL,
+  selection_type text NOT NULL DEFAULT 'single'::text,
+  min_options integer NOT NULL DEFAULT 0,
+  max_options integer,
+  sort_order integer NOT NULL DEFAULT 0,
+  required boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT modifier_groups_pkey PRIMARY KEY (id),
+  CONSTRAINT modifier_groups_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT modifier_groups_menu_item_id_fkey FOREIGN KEY (menu_item_id) REFERENCES public.menu_items(id)
 );
-
--- =============================
--- Customers & Addresses
--- =============================
-CREATE TABLE customers (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           TEXT,
-    phone           TEXT,
-    first_name      TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.modifier_options (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  group_id uuid NOT NULL,
+  name text NOT NULL,
+  price_delta numeric NOT NULL DEFAULT 0.00,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT modifier_options_pkey PRIMARY KEY (id),
+  CONSTRAINT modifier_options_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.modifier_groups(id)
 );
-
-CREATE TABLE customer_addresses (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id     UUID REFERENCES customers(id) ON DELETE CASCADE,
-    label           TEXT,
-    line1           TEXT NOT NULL,
-    line2           TEXT,
-    city            TEXT NOT NULL,
-    province        TEXT NOT NULL,
-    postal_code     TEXT NOT NULL,
-    country         TEXT NOT NULL DEFAULT 'Canada',
-    lat             DECIMAL(10,7),
-    lng             DECIMAL(10,7),
-    is_default      BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.order_events (
+  id bigint NOT NULL DEFAULT nextval('order_events_id_seq'::regclass),
+  order_id uuid NOT NULL,
+  actor_type text NOT NULL,
+  actor_id uuid,
+  event_type text NOT NULL,
+  payload jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT order_events_pkey PRIMARY KEY (id),
+  CONSTRAINT order_events_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
 );
-
--- =============================
--- Enums for Orders & Payments
--- =============================
-CREATE TYPE order_status AS ENUM ('received','preparing','ready','enroute','completed','cancelled');
-CREATE TYPE fulfillment_type AS ENUM ('delivery','pickup');
-CREATE TYPE payment_status AS ENUM ('pending','authorized','paid','refunded','failed');
-CREATE TYPE payment_method AS ENUM ('card_online','card_terminal','cash');
-
--- =============================
--- Orders & Payments
--- =============================
-CREATE TABLE orders (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_number     BIGSERIAL UNIQUE, -- short numeric order number for display
-
-    restaurant_id    UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-    customer_id      UUID REFERENCES customers(id) ON DELETE SET NULL,
-    fulfillment      fulfillment_type NOT NULL,
-    status           order_status NOT NULL DEFAULT 'received',
-    scheduled_at     TIMESTAMPTZ,
-    placed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at     TIMESTAMPTZ,
-    cancelled_at     TIMESTAMPTZ,
-    subtotal         NUMERIC(10,2) NOT NULL DEFAULT 0,
-    delivery_fee     NUMERIC(10,2) NOT NULL DEFAULT 0,
-    tip_amount       NUMERIC(10,2) NOT NULL DEFAULT 0,
-    taxes            NUMERIC(10,2) NOT NULL DEFAULT 0,
-    total            NUMERIC(10,2) NOT NULL,
-    notes            TEXT,
-    delivery_address JSONB,
-    pickup_name      TEXT,
-    pickup_phone     TEXT,
-    source_channel   TEXT NOT NULL DEFAULT 'web',
-    cancellation_reason TEXT,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.order_item_modifiers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_item_id uuid NOT NULL,
+  modifier_name text NOT NULL,
+  option_name text NOT NULL,
+  price_delta numeric NOT NULL DEFAULT 0,
+  CONSTRAINT order_item_modifiers_pkey PRIMARY KEY (id),
+  CONSTRAINT order_item_modifiers_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_items(id)
 );
-
-CREATE TABLE order_items (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    menu_item_id    UUID REFERENCES menu_items(id),
-    name            TEXT NOT NULL,
-    description     TEXT,
-    unit_price      NUMERIC(10,2) NOT NULL,
-    quantity        INT NOT NULL,
-    total_price     NUMERIC(10,2) NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.order_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL,
+  menu_item_id uuid,
+  name text NOT NULL,
+  description text,
+  unit_price numeric NOT NULL,
+  quantity integer NOT NULL,
+  total_price numeric NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT order_items_pkey PRIMARY KEY (id),
+  CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id),
+  CONSTRAINT order_items_menu_item_id_fkey FOREIGN KEY (menu_item_id) REFERENCES public.menu_items(id)
 );
-
-CREATE TABLE order_item_modifiers (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_item_id   UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-    modifier_name   TEXT NOT NULL,
-    option_name     TEXT NOT NULL,
-    price_delta     NUMERIC(10,2) NOT NULL DEFAULT 0
+CREATE TABLE public.orders (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  customer_id uuid,
+  fulfillment USER-DEFINED NOT NULL,
+  status USER-DEFINED NOT NULL DEFAULT 'received'::order_status,
+  scheduled_at timestamp with time zone,
+  placed_at timestamp with time zone NOT NULL DEFAULT now(),
+  completed_at timestamp with time zone,
+  cancelled_at timestamp with time zone,
+  subtotal numeric NOT NULL DEFAULT 0,
+  delivery_fee numeric NOT NULL DEFAULT 0,
+  tip_amount numeric NOT NULL DEFAULT 0,
+  taxes numeric NOT NULL DEFAULT 0,
+  total numeric NOT NULL,
+  notes text,
+  delivery_address jsonb,
+  pickup_name text,
+  pickup_phone text,
+  source_channel text NOT NULL DEFAULT 'web'::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  order_number bigint NOT NULL DEFAULT nextval('orders_order_number_seq'::regclass) UNIQUE,
+  cancellation_reason text,
+  failure_reason text,
+  driver_id uuid,
+  cook_id uuid,
+  drop_option text CHECK (drop_option IS NULL OR (drop_option = ANY (ARRAY['hand'::text, 'door'::text]))),
+  apartment_suite character varying,
+  CONSTRAINT orders_pkey PRIMARY KEY (id),
+  CONSTRAINT orders_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT orders_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.staff_users(id),
+  CONSTRAINT orders_cook_id_fkey FOREIGN KEY (cook_id) REFERENCES public.staff_users(id)
 );
-
-CREATE TABLE payments (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    method          payment_method NOT NULL,
-    status          payment_status NOT NULL DEFAULT 'pending',
-    amount          NUMERIC(10,2) NOT NULL,
-    processor       TEXT,
-    processor_id    TEXT,
-    last4           TEXT,
-    auth_code       TEXT,
-    captured_at     TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.payments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL,
+  method USER-DEFINED NOT NULL,
+  status USER-DEFINED NOT NULL DEFAULT 'pending'::payment_status,
+  amount numeric NOT NULL,
+  processor text,
+  processor_id text,
+  last4 text,
+  auth_code text,
+  captured_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT payments_pkey PRIMARY KEY (id),
+  CONSTRAINT payments_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
 );
-
-CREATE TABLE order_events (
-    id              BIGSERIAL PRIMARY KEY,
-    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    actor_type      TEXT NOT NULL, -- 'system','cook','delivery','manager'
-    actor_id        UUID,
-    event_type      TEXT NOT NULL, -- 'status_changed','note_added', etc.
-    payload         JSONB,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.restaurant_settings (
+  restaurant_id uuid NOT NULL,
+  address_line1 text,
+  address_line2 text,
+  city text,
+  province text,
+  postal_code text,
+  country text DEFAULT 'Canada'::text,
+  lat numeric,
+  lng numeric,
+  delivery_radius_km numeric,
+  delivery_zones_geojson jsonb,
+  service_types jsonb NOT NULL DEFAULT '["delivery", "pickup"]'::jsonb,
+  hours_json jsonb,
+  ordering_enabled boolean NOT NULL DEFAULT true,
+  min_order_amount numeric,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  payment_options_by_service jsonb NOT NULL DEFAULT '{"pickup": ["card_online", "card_terminal", "cash"], "delivery": ["card_online", "card_terminal", "cash"]}'::jsonb,
+  delivery_alternatives jsonb,
+  pickup_enabled boolean NOT NULL DEFAULT true,
+  delivery_enabled boolean NOT NULL DEFAULT true,
+  estimated_prep_time_minutes integer DEFAULT 20,
+  estimated_delivery_time_minutes integer DEFAULT 30,
+  CONSTRAINT restaurant_settings_pkey PRIMARY KEY (restaurant_id),
+  CONSTRAINT restaurant_settings_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
-
--- =============================
--- Staff (for app roles)
--- =============================
-CREATE TABLE staff_users (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    restaurant_id  UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-
-    auth_user_id   UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    username       TEXT NOT NULL,
-
-    role           TEXT NOT NULL, -- 'manager' | 'cook' | 'delivery'
-    phone          TEXT,
-    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    UNIQUE (restaurant_id, username),
-    UNIQUE (auth_user_id)
+CREATE TABLE public.restaurants (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  slug text NOT NULL UNIQUE,
+  name text NOT NULL,
+  description text,
+  logo_url text,
+  hero_image_url text,
+  phone text,
+  email text,
+  timezone text NOT NULL DEFAULT 'America/Toronto'::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT restaurants_pkey PRIMARY KEY (id)
 );
-
--- Live driver location (for tracking)
-CREATE TABLE driver_locations (
-    staff_id    UUID PRIMARY KEY REFERENCES staff_users(id) ON DELETE CASCADE,
-    lat         DECIMAL(10,7),
-    lng         DECIMAL(10,7),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.staff_users (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  username text NOT NULL,
+  role text NOT NULL,
+  phone text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  auth_user_id uuid NOT NULL UNIQUE,
+  password_hash text,
+  work_schedule_enabled boolean NOT NULL DEFAULT false,
+  work_schedule jsonb,
+  CONSTRAINT staff_users_pkey PRIMARY KEY (id),
+  CONSTRAINT staff_users_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT staff_users_auth_user_id_fkey FOREIGN KEY (auth_user_id) REFERENCES auth.users(id)
 );
-
--- =============================
--- Useful indexes
--- =============================
-CREATE INDEX idx_menu_items_restaurant ON menu_items(restaurant_id);
-CREATE INDEX idx_orders_restaurant_status ON orders(restaurant_id, status);
-CREATE INDEX idx_orders_customer ON orders(customer_id);
-CREATE INDEX idx_payments_order ON payments(order_id);
-CREATE INDEX idx_order_events_order ON order_events(order_id);
-
--- =============================
--- Staff (for app roles)
--- =============================
-CREATE TABLE staff_users (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    restaurant_id  UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-
-    auth_user_id   UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    username       TEXT NOT NULL,
-
-    role           TEXT NOT NULL, -- 'manager' | 'cook' | 'delivery'
-    phone          TEXT,
-    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    -- username must be unique *per restaurant*
-    UNIQUE (restaurant_id, username),
-    UNIQUE (auth_user_id)
-);
-
--- Live driver location (for tracking)
-CREATE TABLE driver_locations (
-    staff_id    UUID PRIMARY KEY REFERENCES staff_users(id) ON DELETE CASCADE,
-    lat         DECIMAL(10,7),
-    lng         DECIMAL(10,7),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
