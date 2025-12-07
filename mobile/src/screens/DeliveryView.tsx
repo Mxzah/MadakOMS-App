@@ -30,6 +30,7 @@ import {
   deriveEta,
   formatAddress,
   formatDateTime,
+  formatDateTimeWithMonthName,
   getCityFromAddress,
 } from '../utils/orderHelpers';
 import { sendStatusSMS } from '../utils/smsHelpers';
@@ -131,6 +132,101 @@ const extractDestinationCoords = (deliveryAddress: any): Coordinates | null => {
     return { lat, lng };
   }
   return null;
+};
+
+const fetchRestaurantCoordinates = async (restaurantId: string): Promise<Coordinates | null> => {
+  try {
+    // Récupérer l'adresse du restaurant depuis restaurant_settings
+    const { data, error } = await supabase
+      .from('restaurant_settings')
+      .select('address_line1, city, province, postal_code, latitude, longitude')
+      .eq('restaurant_id', restaurantId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Erreur lors de la récupération des coordonnées du restaurant:', error);
+      return null;
+    }
+
+    if (data) {
+      // Si les coordonnées sont directement dans la base de données
+      if (data.latitude && data.longitude) {
+        const lat = Number(data.latitude);
+        const lng = Number(data.longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          return { lat, lng };
+        }
+      }
+
+      // Construire l'adresse complète à partir des colonnes
+      const addressParts = [
+        data.address_line1,
+        data.city,
+        data.province,
+        data.postal_code,
+      ].filter(Boolean);
+
+      if (addressParts.length > 0) {
+        const fullAddress = addressParts.join(', ');
+        const coords = await geocodeAddress(fullAddress);
+        if (coords) {
+          return coords;
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Erreur lors de la récupération des coordonnées du restaurant:', err);
+    return null;
+  }
+};
+
+const geocodeAddress = async (address: string): Promise<Coordinates | null> => {
+  try {
+    // Utiliser l'API Nominatim d'OpenStreetMap (gratuite, pas besoin de clé API)
+    const encodedAddress = encodeURIComponent(address);
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`,
+      {
+        headers: {
+          'User-Agent': 'MadakOMS-DeliveryApp/1.0',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    if (data && data.length > 0) {
+      const lat = Number(data[0].lat);
+      const lng = Number(data[0].lon);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return { lat, lng };
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Erreur lors du géocodage:', err);
+    return null;
+  }
+};
+
+const computeRestaurantToClientDistance = (
+  restaurantCoords: Coordinates | null,
+  deliveryAddress: any,
+  fallback: string
+): string => {
+  const destinationCoords = extractDestinationCoords(deliveryAddress);
+  if (!destinationCoords || !restaurantCoords) {
+    return fallback;
+  }
+
+  const distance = haversineDistanceKm(restaurantCoords, destinationCoords);
+  return `${distance.toFixed(1)} km`;
 };
 
 const historyStatusLabel = (status: AssignedOrder['status']) => {
@@ -238,6 +334,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   >([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState<Coordinates | null>(null);
+  const [restaurantCoords, setRestaurantCoords] = useState<Coordinates | null>(null);
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
   const [failureOrder, setFailureOrder] = useState<AssignedOrder | null>(null);
   const [failureReason, setFailureReason] = useState('');
@@ -361,7 +458,9 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       city: cityLabel,
       streetLabel,
       address: addressText || streetLabel,
-        distance: computeDistanceLabel(driverLocation, destinationCoords, fallbackDistance),
+        distance: restaurantCoords 
+          ? computeRestaurantToClientDistance(restaurantCoords, row.delivery_address, fallbackDistance)
+          : fallbackDistance,
         eta: computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
       status: (row.status as AssignedOrder['status']) ?? 'ready',
       customerName: row.delivery_name || row.customer?.first_name || null,
@@ -372,7 +471,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
     };
     },
-    [driverLocation]
+    [driverLocation, restaurantCoords]
   );
 
   const fetchAvailableOrders = useCallback(async () => {
@@ -496,7 +595,9 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           fulfillment: (row.fulfillment as 'delivery' | 'pickup') ?? 'delivery',
           paymentInfo: 'paid_online',
           eta: computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
-          distance: computeDistanceLabel(driverLocation, destinationCoords, fallbackDistance),
+          distance: restaurantCoords 
+            ? computeRestaurantToClientDistance(restaurantCoords, row.delivery_address, fallbackDistance)
+            : fallbackDistance,
           status: row.status as AssignedOrder['status'],
           driverId: row.driver_id ?? null,
           driverName: driverInfo?.username ?? null,
@@ -510,7 +611,15 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       }) ?? [];
 
     setActiveOrders(mapped);
-  }, [driverLocation, staff.restaurantId, staff.restaurantName, staff.staffUserId, settings.deliveryMode]);
+  }, [driverLocation, restaurantCoords, staff.restaurantId, staff.restaurantName, staff.staffUserId, settings.deliveryMode]);
+
+  useEffect(() => {
+    const loadRestaurantCoords = async () => {
+      const coords = await fetchRestaurantCoordinates(staff.restaurantId);
+      setRestaurantCoords(coords);
+    };
+    loadRestaurantCoords();
+  }, [staff.restaurantId]);
 
   useEffect(() => {
     fetchAvailableOrders();
@@ -1517,7 +1626,7 @@ function AvailableOrdersList({
           <Text style={styles.availableAddress}>{order.address}</Text>
           {order.scheduledAt ? (
             <Text style={[styles.availableMeta, { marginTop: 4 }]}>
-              Prévue : {formatDateTime(order.scheduledAt)}
+              Prévue : {formatDateTimeWithMonthName(order.scheduledAt)}
             </Text>
           ) : null}
           {order.paymentMethod ? (

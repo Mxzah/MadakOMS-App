@@ -96,7 +96,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
       </View>
 
       <View style={styles.tabBar}>
-        {(['orders', 'staff', 'settings', 'analytics'] as ManagerTabId[]).map((id) => {
+        {(['orders', 'staff', 'analytics', 'settings'] as ManagerTabId[]).map((id) => {
           const isActive = activeTab === id;
           return (
             <TouchableOpacity
@@ -121,9 +121,9 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
                   ? 'Commandes'
                   : id === 'staff'
                   ? 'Équipe'
-                  : id === 'settings'
-                  ? 'Réglages'
-                  : 'Analyses'}
+                  : id === 'analytics'
+                  ? 'Analyses'
+                  : 'Réglages'}
               </Text>
             </TouchableOpacity>
           );
@@ -158,7 +158,9 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           theme={theme}
           isDark={isDark}
         />
-      ) : activeTab === 'settings' ? (
+      ) : activeTab === 'analytics' ? (
+        <AnalyticsTab restaurantId={staff.restaurantId} theme={theme} isDark={isDark} />
+      ) : (
         <SettingsTab
           restaurantInfo={restaurantInfo}
           orderingSettings={orderingSettings}
@@ -173,8 +175,6 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
           theme={theme}
           isDark={isDark}
         />
-      ) : (
-        <AnalyticsTab restaurantId={staff.restaurantId} theme={theme} isDark={isDark} />
       )}
 
       <OrderDetailModal

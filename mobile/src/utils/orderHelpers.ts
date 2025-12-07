@@ -64,6 +64,22 @@ export const formatDateTime = (isoString: string | null) => {
   });
 };
 
+export const formatDateTimeWithMonthName = (isoString: string | null) => {
+  if (!isoString) {
+    return '—';
+  }
+  const date = new Date(isoString);
+  const months = [
+    'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+  ];
+  const day = date.getDate();
+  const month = months[date.getMonth()];
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${day} ${month} ${hours} h ${minutes}`;
+};
+
 export const getPriorityFlags = (order: KitchenOrder) => {
   const flags: Array<{ label: string; type: 'late' | 'soon' }> = [];
   const now = Date.now();

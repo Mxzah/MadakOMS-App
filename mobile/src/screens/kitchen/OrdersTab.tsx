@@ -21,6 +21,7 @@ import {
   ORDER_DETAIL_SELECT,
   formatAddress,
   formatDateTime,
+  formatDateTimeWithMonthName,
   getCustomerName,
   getCustomerPhone,
   getCustomerEmail,
@@ -359,11 +360,11 @@ export function OrdersTab({
                   </Text>
                 </View>
                 <Text style={[styles.orderMeta, { color: theme.textSecondary }]}>
-                  Placée {formatDateTime(order.placedAt)}
+                  Placée {formatDateTimeWithMonthName(order.placedAt)}
                 </Text>
                 {order.scheduledAt ? (
                   <Text style={[styles.orderMeta, { color: theme.textSecondary }]}>
-                    Prévue {formatDateTime(order.scheduledAt)}
+                    Prévue {formatDateTimeWithMonthName(order.scheduledAt)}
                   </Text>
                 ) : null}
                 <View style={styles.orderPillsRow}>
@@ -581,6 +582,14 @@ function OrderDetailModal({
               <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
                 {order.fulfillment === 'delivery' ? 'Livraison' : 'À emporter'}
               </Text>
+              <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
+                Placée : {formatDateTimeWithMonthName(order.placedAt)}
+              </Text>
+              {order.scheduledAt ? (
+                <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
+                  Prévue : {formatDateTimeWithMonthName(order.scheduledAt)}
+                </Text>
+              ) : null}
               <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                 <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>
                   Articles
