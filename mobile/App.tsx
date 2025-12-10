@@ -417,10 +417,10 @@ export default function App() {
               <View style={styles.formCard}>
                 <View style={styles.formHeader}>
                   <Text style={styles.cardEyebrow}>CONNEXION</Text>
-                  <Text style={styles.cardTitle}>Identifiez-vous</Text>
-                  <Text style={styles.cardSubtitle}>
+                <Text style={styles.cardTitle}>Identifiez-vous</Text>
+                <Text style={styles.cardSubtitle}>
                     Utilisez vos accès gérés par le responsable pour rejoindre la cuisine, la livraison ou la gestion
-                  </Text>
+                </Text>
                 </View>
 
                 <View style={styles.segmentedControl}>
@@ -459,7 +459,7 @@ export default function App() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Mot de passe</Text>
+                    <Text style={styles.inputLabel}>Mot de passe</Text>
                   <TextInput
                     value={password}
                     onChangeText={setPassword}

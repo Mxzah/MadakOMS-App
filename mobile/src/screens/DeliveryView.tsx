@@ -230,35 +230,43 @@ const geocodeClientAddress = async (deliveryAddress: any): Promise<Coordinates |
   }
 };
 
-const fetchRestaurantCoordinates = async (restaurantId: string): Promise<Coordinates | null> => {
+type RestaurantSettings = {
+  coordinates: Coordinates | null;
+  distanceCalculationEnabled: boolean;
+  distanceMatrixApiKey: string | null;
+};
+
+const fetchRestaurantSettings = async (restaurantId: string): Promise<RestaurantSettings> => {
   try {
-    // Récupérer les coordonnées du restaurant depuis restaurant_settings
-    // Note: les colonnes sont 'lat' et 'lng', pas 'latitude' et 'longitude'
+    // Récupérer les coordonnées, le paramètre de calcul de distance et la clé API
     const { data, error } = await supabase
       .from('restaurant_settings')
-      .select('lat, lng')
+      .select('lat, lng, distance_time_calculation_enabled, distance_matrix_api_key')
       .eq('restaurant_id', restaurantId)
       .maybeSingle();
 
     if (error) {
-      console.warn('Erreur lors de la récupération des coordonnées du restaurant:', error);
-      return null;
+      console.warn('Erreur lors de la récupération des paramètres du restaurant:', error);
+      return { coordinates: null, distanceCalculationEnabled: false, distanceMatrixApiKey: null };
     }
 
+    let coordinates: Coordinates | null = null;
     if (data && data.lat && data.lng) {
       const lat = Number(data.lat);
       const lng = Number(data.lng);
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        console.log('[fetchRestaurantCoordinates] Restaurant coordinates:', { lat, lng });
-        return { lat, lng };
+        coordinates = { lat, lng };
       }
     }
 
-    console.warn('[fetchRestaurantCoordinates] No coordinates found for restaurant:', restaurantId);
-    return null;
+    const distanceCalculationEnabled = data?.distance_time_calculation_enabled ?? false;
+    const distanceMatrixApiKey = data?.distance_matrix_api_key ?? null;
+    
+    console.log('[fetchRestaurantSettings] Settings:', { coordinates, distanceCalculationEnabled, hasApiKey: !!distanceMatrixApiKey });
+    return { coordinates, distanceCalculationEnabled, distanceMatrixApiKey };
   } catch (err) {
-    console.warn('Erreur lors de la récupération des coordonnées du restaurant:', err);
-    return null;
+    console.warn('Erreur lors de la récupération des paramètres du restaurant:', err);
+    return { coordinates: null, distanceCalculationEnabled: false, distanceMatrixApiKey: null };
   }
 };
 
@@ -278,7 +286,8 @@ const computeRestaurantToClientDistance = (
 
 const getDistanceMatrixData = async (
   restaurantCoords: Coordinates | null,
-  deliveryAddress: any
+  deliveryAddress: any,
+  apiKey: string | null
 ): Promise<{ eta: string; distance: string; rawData?: {
   origin_coords: Coordinates;
   destination_coords: Coordinates;
@@ -289,6 +298,11 @@ const getDistanceMatrixData = async (
   api_response: any;
 } } | null> => {
   if (!restaurantCoords) {
+    return null;
+  }
+
+  if (!apiKey) {
+    console.warn('Distance Matrix API key not configured');
     return null;
   }
 
@@ -307,13 +321,6 @@ const getDistanceMatrixData = async (
   try {
     const origins = `${restaurantCoords.lat},${restaurantCoords.lng}`;
     const destinations = `${destinationCoords.lat},${destinationCoords.lng}`;
-    const extra = Constants.expoConfig?.extra as { distanceMatrixApiKey?: string } | undefined;
-    const apiKey = extra?.distanceMatrixApiKey;
-    
-    if (!apiKey) {
-      console.warn('Distance Matrix API key not configured');
-      return null;
-    }
     
     const url = `https://api.distancematrix.ai/maps/api/distancematrix/json?origins=${origins}&destinations=${destinations}&key=${apiKey}`;
     
@@ -470,6 +477,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState<Coordinates | null>(null);
   const [restaurantCoords, setRestaurantCoords] = useState<Coordinates | null>(null);
+  const [distanceCalculationEnabled, setDistanceCalculationEnabled] = useState(false);
+  const [distanceMatrixApiKey, setDistanceMatrixApiKey] = useState<string | null>(null);
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
   const [failureOrder, setFailureOrder] = useState<AssignedOrder | null>(null);
   const [failureReason, setFailureReason] = useState('');
@@ -563,8 +572,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     
     // Extraire la ville pour l'affichage dans le header
     const addressParts = fullAddress
-      .split(',')
-      .map((part: string) => part.trim())
+          .split(',')
+          .map((part: string) => part.trim())
       .filter(Boolean);
 
     const streetLabel = addressParts[0] ?? 'Adresse à confirmer';
@@ -650,6 +659,11 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
 
   // Calculer et stocker la distance pour une commande (appelé UNE seule fois par commande)
   const calculateAndStoreDistance = useCallback(async (orderId: string, deliveryAddress: any): Promise<{ eta: string | null; distance: string | null }> => {
+    // Si le calcul de distance est désactivé ou pas de clé API, ne pas appeler l'API
+    if (!distanceCalculationEnabled || !distanceMatrixApiKey) {
+      return { eta: null, distance: null };
+    }
+
     // Vérifier si déjà calculé
     const existing = await fetchStoredDistanceData(orderId);
     if (existing.eta && existing.distance) {
@@ -661,7 +675,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
 
     try {
-      const distanceData = await getDistanceMatrixData(restaurantCoords, deliveryAddress);
+      const distanceData = await getDistanceMatrixData(restaurantCoords, deliveryAddress, distanceMatrixApiKey);
       if (distanceData) {
         // Stocker le résultat dans order_events avec event_type 'distance_calculated'
         const eventPayload = {
@@ -688,7 +702,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
 
     return { eta: null, distance: null };
-  }, [restaurantCoords, fetchStoredDistanceData]);
+  }, [distanceCalculationEnabled, distanceMatrixApiKey, restaurantCoords, fetchStoredDistanceData]);
 
   const fetchAvailableOrders = useCallback(async () => {
     setAvailableLoading(true);
@@ -902,11 +916,13 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   }, [driverLocation, restaurantCoords, staff.restaurantId, staff.restaurantName, staff.staffUserId, settings.deliveryMode, fetchStoredDistanceData]);
 
   useEffect(() => {
-    const loadRestaurantCoords = async () => {
-      const coords = await fetchRestaurantCoordinates(staff.restaurantId);
-      setRestaurantCoords(coords);
+    const loadRestaurantSettings = async () => {
+      const settings = await fetchRestaurantSettings(staff.restaurantId);
+      setRestaurantCoords(settings.coordinates);
+      setDistanceCalculationEnabled(settings.distanceCalculationEnabled);
+      setDistanceMatrixApiKey(settings.distanceMatrixApiKey);
     };
-    loadRestaurantCoords();
+    loadRestaurantSettings();
   }, [staff.restaurantId]);
 
   useEffect(() => {
@@ -1117,50 +1133,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const performAcceptOrder = async (candidate: AvailableOrder) => {
     try {
       console.log('[handleAcceptOrder] Starting for order:', candidate.id);
-      console.log('[handleAcceptOrder] restaurantCoords:', restaurantCoords);
       
-      // Vérifier d'abord si les données sont déjà stockées pour éviter un appel API inutile
+      // Récupérer les données de distance déjà stockées (calculées lors de l'apparition de la commande)
+      // Cela évite un appel API supplémentaire
       const storedData = await fetchStoredDistanceData(candidate.id);
-      let calculatedETA: string | null = storedData.eta;
-      let calculatedDistance: string | null = storedData.distance;
-      let distanceDataRaw: any = null;
-
-      // Si les données ne sont pas stockées, calculer avec l'API Distance Matrix
-      if (!calculatedETA || !calculatedDistance) {
-        // Récupérer l'adresse de livraison complète pour calculer l'ETA et la distance
-        const { data: orderData, error: fetchError } = await supabase
-          .from('orders')
-          .select('delivery_address')
-          .eq('id', candidate.id)
-          .maybeSingle();
-
-        if (fetchError) {
-          console.warn('Erreur lors de la récupération de l\'adresse:', fetchError);
-        }
-
-        console.log('[handleAcceptOrder] delivery_address:', orderData?.delivery_address ? 'present' : 'missing');
-        console.log('[handleAcceptOrder] restaurantCoords:', restaurantCoords ? 'present' : 'missing');
-        
-        if (orderData?.delivery_address && restaurantCoords) {
-          console.log('[handleAcceptOrder] Calling Distance Matrix API...');
-          const distanceData = await getDistanceMatrixData(restaurantCoords, orderData.delivery_address);
-          if (distanceData) {
-            calculatedETA = distanceData.eta;
-            calculatedDistance = distanceData.distance;
-            distanceDataRaw = distanceData;
-            console.log('[handleAcceptOrder] API returned - ETA:', calculatedETA, 'Distance:', calculatedDistance);
-            
-            // Stocker aussi les données brutes pour le débogage
-            if ('rawData' in distanceData && distanceData.rawData) {
-              console.log('[handleAcceptOrder] Raw data:', JSON.stringify(distanceData.rawData, null, 2));
-            }
-          } else {
-            console.warn('[handleAcceptOrder] No distance data returned from API');
-          }
-        } else {
-          console.warn('[handleAcceptOrder] Skipping API call - missing delivery_address or restaurantCoords');
-        }
-      }
+      const calculatedETA: string | null = storedData.eta;
+      const calculatedDistance: string | null = storedData.distance;
+      
+      console.log('[handleAcceptOrder] Using stored data - ETA:', calculatedETA, 'Distance:', calculatedDistance);
 
       const { error } = await supabase
         .from('orders')
@@ -1171,7 +1151,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         throw error;
       }
 
-      // Stocker l'ETA et la distance dans order_events si calculés
+      // Stocker l'événement d'assignation avec l'ETA et la distance (déjà calculées)
       const eventPayload: Record<string, any> = { 
         status: 'assigned', 
         driver_id: staff.staffUserId 
@@ -1182,23 +1162,8 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       if (calculatedDistance) {
         eventPayload.estimated_distance = calculatedDistance;
       }
-      
-      // Stocker aussi les données brutes pour le débogage (si disponibles)
-      if (distanceDataRaw && 'rawData' in distanceDataRaw && distanceDataRaw.rawData) {
-        eventPayload.distance_calculation = {
-          origin_coords: distanceDataRaw.rawData.origin_coords,
-          destination_coords: distanceDataRaw.rawData.destination_coords,
-          duration_seconds: distanceDataRaw.rawData.duration_seconds,
-          distance_meters: distanceDataRaw.rawData.distance_meters,
-          duration_text: distanceDataRaw.rawData.duration_text,
-          distance_text: distanceDataRaw.rawData.distance_text,
-          calculated_at: new Date().toISOString()
-        };
-      }
 
-      console.log('[handleAcceptOrder] Storing event payload:', JSON.stringify(eventPayload, null, 2));
       await logOrderEvent(candidate.id, 'assigned', eventPayload);
-      console.log('[handleAcceptOrder] Event stored successfully');
 
       // Envoyer le SMS au client après l'assignation
       sendStatusSMS(candidate.id).catch((err) => {
@@ -1495,6 +1460,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               }}
               palette={palette}
               styles={styles}
+              showDistanceInfo={distanceCalculationEnabled}
             />
           ))}
         </View>
@@ -1557,6 +1523,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
             fetchOrderItems(candidate.id);
           }}
           styles={styles}
+          showDistanceInfo={distanceCalculationEnabled}
         />
       );
     }
@@ -1919,6 +1886,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
                   onChangeStatus={() => undefined}
                   palette={palette}
                   styles={styles}
+                  showDistanceInfo={distanceCalculationEnabled}
                 />
               )
             )}
@@ -1973,6 +1941,7 @@ function AvailableOrdersList({
   onAssign,
   onPreview,
   styles,
+  showDistanceInfo,
 }: {
   orders: AvailableOrder[];
   loading: boolean;
@@ -1981,6 +1950,7 @@ function AvailableOrdersList({
   onAssign?: (order: AvailableOrder) => void;
   onPreview: (order: AvailableOrder) => void;
   styles: DeliveryStyles;
+  showDistanceInfo: boolean;
 }) {
   if (loading) {
     return (
@@ -2013,25 +1983,25 @@ function AvailableOrdersList({
           <Text style={styles.availableAddress}>{order.address}</Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 4 }}>
             <View style={{ flex: 1 }}>
-              {order.scheduledAt ? (
+          {order.scheduledAt ? (
                 <Text style={styles.availableMeta}>
                   Prévue : {formatDateTimeWithMonthName(order.scheduledAt)}
-                </Text>
-              ) : null}
-              {order.paymentMethod ? (
+            </Text>
+          ) : null}
+          {order.paymentMethod ? (
                 <Text style={styles.availableMeta}>
-                  Paiement : {translatePaymentMethod(order.paymentMethod)}
-                </Text>
-              ) : null}
-              {order.tipAmount && order.tipAmount > 0 ? (
+              Paiement : {translatePaymentMethod(order.paymentMethod)}
+            </Text>
+          ) : null}
+          {order.tipAmount && order.tipAmount > 0 ? (
                 <Text style={styles.availableMeta}>
-                  Pourboire : ${order.tipAmount.toFixed(2)}
-                </Text>
-              ) : null}
+              Pourboire : ${order.tipAmount.toFixed(2)}
+            </Text>
+          ) : null}
             </View>
-            {order.eta ? (
+            {showDistanceInfo && order.eta ? (
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.availableMeta}>{order.eta}</Text>
+            <Text style={styles.availableMeta}>{order.eta}</Text>
                 {order.distance ? (
                   <Text style={styles.availableMeta}>{order.distance}</Text>
                 ) : null}
@@ -2077,6 +2047,7 @@ type DeliveryCardProps = {
   }>;
   palette: Palette;
   styles: DeliveryStyles;
+  showDistanceInfo?: boolean;
 };
 
 function DeliveryCard({
@@ -2092,6 +2063,7 @@ function DeliveryCard({
   items,
   palette,
   styles,
+  showDistanceInfo = true,
 }: DeliveryCardProps) {
   const currentStatus =
     DELIVERY_STATUSES.find((status) => status.id === order.status) ?? { label: order.status };
@@ -2136,9 +2108,9 @@ function DeliveryCard({
             </Text>
           ) : null}
         </View>
-        {order.eta ? (
+        {showDistanceInfo && order.eta ? (
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.availableMeta}>ETA : {order.eta}</Text>
+            <Text style={styles.availableMeta}>{order.eta}</Text>
             {order.distance ? (
               <Text style={styles.availableMeta}>{order.distance}</Text>
             ) : null}
@@ -2241,7 +2213,7 @@ function DeliveryCard({
                 Tél. {clientPhone}
               </Text>
               {clientEmail ? (
-                <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>{clientEmail}</Text>
+              <Text style={[styles.previewSectionMeta, { color: palette.muted }]}>{clientEmail}</Text>
               ) : null}
             </View>
             {(order.apartmentSuite || order.dropOption || order.notes) && (
@@ -2668,7 +2640,7 @@ function createStyles(palette: Palette) {
     lineHeight: 18,
   },
   logoutButton: {
-    backgroundColor: '#1F2937',
+    backgroundColor: '#DC2626',
     paddingVertical: 14,
     borderRadius: 16,
     alignItems: 'center',

@@ -6,6 +6,7 @@ import { useDeliveryZones } from '../hooks/useDeliveryZones';
 import { useDeliveryFeeRules, type DeliveryFeeRules, type PeakHour, type MinimumOrderSurcharge } from '../hooks/useDeliveryFeeRules';
 import { usePaymentSettings, type PaymentMethod } from '../hooks/usePaymentSettings';
 import { useRestaurantHours, type RestaurantHours, type DayHours } from '../hooks/useRestaurantHours';
+import { useDistanceSettings, type DistanceSettings } from '../hooks/useDistanceSettings';
 import { styles } from '../styles';
 import type { KitchenTheme } from '../../kitchen/types';
 
@@ -211,8 +212,16 @@ export function SettingsTab({
     saveRestaurantHours,
   } = useRestaurantHours(restaurantId);
 
+  const {
+    distanceSettings,
+    loading: distanceSettingsLoading,
+    saving: savingDistanceSettings,
+    saveDistanceSettings,
+  } = useDistanceSettings(restaurantId);
+
   const [localPaymentSettings, setLocalPaymentSettings] = useState<typeof paymentSettings>(paymentSettings);
   const [localRestaurantHours, setLocalRestaurantHours] = useState<RestaurantHours>(restaurantHours);
+  const [localDistanceSettings, setLocalDistanceSettings] = useState<DistanceSettings>(distanceSettings);
 
   const [localDeliveryZoneSettings, setLocalDeliveryZoneSettings] = useState({
     deliveryZonesGeoJson: deliveryZones.deliveryZonesGeoJson,
@@ -254,6 +263,10 @@ export function SettingsTab({
   useEffect(() => {
     setLocalRestaurantHours(restaurantHours);
   }, [restaurantHours]);
+
+  useEffect(() => {
+    setLocalDistanceSettings(distanceSettings);
+  }, [distanceSettings]);
 
   useEffect(() => {
     if (deliveryFeeRules) {
@@ -553,7 +566,34 @@ export function SettingsTab({
     });
   };
 
-  if (loading || deliveryZonesLoading || deliveryFeeRulesLoading || paymentSettingsLoading || restaurantHoursLoading) {
+  const handleCancelDistanceSettings = () => {
+    setLocalDistanceSettings(distanceSettings);
+  };
+
+  const handleSaveDistanceSettings = () => {
+    Alert.alert(
+      'Confirmer la sauvegarde',
+      'Voulez-vous sauvegarder les paramètres de calcul de distance ?',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+        },
+        {
+          text: 'Sauvegarder',
+          style: 'default',
+          onPress: async () => {
+            const success = await saveDistanceSettings(localDistanceSettings);
+            if (!success) {
+              setLocalDistanceSettings(distanceSettings);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  if (loading || deliveryZonesLoading || deliveryFeeRulesLoading || paymentSettingsLoading || restaurantHoursLoading || distanceSettingsLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator color={currentTheme.pillActiveBg} />
@@ -1669,6 +1709,75 @@ export function SettingsTab({
           >
             <Text style={styles.modalCloseText}>
               {savingRestaurantHours ? 'Sauvegarde…' : 'Sauvegarder les horaires'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Distance Calculation Settings Section */}
+      <View style={dynamicStyles.sectionCard}>
+        <Text style={dynamicStyles.sectionTitle}>📍 Calcul de distance (ETA)</Text>
+
+        <View style={dynamicStyles.modalSection}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={dynamicStyles.modalSectionTitle}>Activer le calcul de distance</Text>
+              <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginTop: 4 }}>
+                Affiche l'ETA et la distance aux livreurs
+              </Text>
+            </View>
+            <Switch
+              value={localDistanceSettings.distanceCalculationEnabled}
+              onValueChange={(value) => setLocalDistanceSettings({ ...localDistanceSettings, distanceCalculationEnabled: value })}
+              trackColor={{ false: currentTheme.surfaceMuted, true: currentTheme.pillActiveBg }}
+              thumbColor={currentTheme.surface}
+            />
+          </View>
+        </View>
+
+        <View style={dynamicStyles.modalSection}>
+          <Text style={dynamicStyles.modalSectionTitle}>Clé API Distance Matrix</Text>
+          <Text style={{ fontSize: 12, color: currentTheme.textSecondary, marginBottom: 8 }}>
+            Obtenez votre clé sur distancematrix.ai
+          </Text>
+          <TextInput
+            value={localDistanceSettings.distanceMatrixApiKey || ''}
+            onChangeText={(text) => setLocalDistanceSettings({ ...localDistanceSettings, distanceMatrixApiKey: text || null })}
+            placeholder="Entrez votre clé API"
+            placeholderTextColor={currentTheme.textSecondary}
+            style={dynamicStyles.searchInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={false}
+          />
+          {localDistanceSettings.distanceCalculationEnabled && !localDistanceSettings.distanceMatrixApiKey && (
+            <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>
+              ⚠️ Clé API requise pour activer le calcul de distance
+            </Text>
+          )}
+        </View>
+
+        <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={[
+              styles.modalCloseButton,
+              { backgroundColor: currentTheme.surfaceMuted },
+              (saving || savingDistanceSettings) && { opacity: 0.6 },
+            ]}
+            onPress={handleCancelDistanceSettings}
+            disabled={saving || savingDistanceSettings}
+          >
+            <Text style={[styles.modalCloseText, { color: currentTheme.textPrimary }]}>
+              Annuler les changements
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalCloseButton, (saving || savingDistanceSettings) && { opacity: 0.6 }]}
+            onPress={handleSaveDistanceSettings}
+            disabled={saving || savingDistanceSettings}
+          >
+            <Text style={styles.modalCloseText}>
+              {savingDistanceSettings ? 'Sauvegarde…' : 'Sauvegarder les paramètres de distance'}
             </Text>
           </TouchableOpacity>
         </View>
