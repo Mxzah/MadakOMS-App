@@ -134,12 +134,109 @@ const extractDestinationCoords = (deliveryAddress: any): Coordinates | null => {
   return null;
 };
 
+const formatFullAddress = (deliveryAddress: any): string => {
+  if (!deliveryAddress) {
+    return 'Adresse à confirmer';
+  }
+
+  // Si l'adresse complète est déjà disponible, l'utiliser
+  if (deliveryAddress.address && typeof deliveryAddress.address === 'string' && deliveryAddress.address.trim().length > 0) {
+    return deliveryAddress.address.trim();
+  }
+
+  // Sinon, construire l'adresse à partir des composants
+  const addressParts: string[] = [];
+  
+  if (deliveryAddress.line1 || deliveryAddress.address_line1 || deliveryAddress.street) {
+    addressParts.push(deliveryAddress.line1 || deliveryAddress.address_line1 || deliveryAddress.street);
+  }
+  if (deliveryAddress.city) {
+    addressParts.push(deliveryAddress.city);
+  }
+  if (deliveryAddress.province || deliveryAddress.state) {
+    addressParts.push(deliveryAddress.province || deliveryAddress.state);
+  }
+  if (deliveryAddress.country) {
+    addressParts.push(deliveryAddress.country);
+  }
+
+  if (addressParts.length > 0) {
+    return addressParts.join(', ');
+  }
+
+  return 'Adresse à confirmer';
+};
+
+const geocodeClientAddress = async (deliveryAddress: any): Promise<Coordinates | null> => {
+  try {
+    // Construire l'adresse complète à partir de delivery_address
+    const addressParts: string[] = [];
+    
+    if (deliveryAddress.address) {
+      addressParts.push(deliveryAddress.address);
+    } else {
+      if (deliveryAddress.line1 || deliveryAddress.address_line1 || deliveryAddress.street) {
+        addressParts.push(deliveryAddress.line1 || deliveryAddress.address_line1 || deliveryAddress.street);
+      }
+      if (deliveryAddress.city) {
+        addressParts.push(deliveryAddress.city);
+      }
+      if (deliveryAddress.province || deliveryAddress.state) {
+        addressParts.push(deliveryAddress.province || deliveryAddress.state);
+      }
+      if (deliveryAddress.postal_code || deliveryAddress.postalCode) {
+        addressParts.push(deliveryAddress.postal_code || deliveryAddress.postalCode);
+      }
+    }
+
+    if (addressParts.length === 0) {
+      return null;
+    }
+
+    const fullAddress = addressParts.join(' ');
+    const extra = Constants.expoConfig?.extra as { geocodeApiKey?: string } | undefined;
+    const apiKey = extra?.geocodeApiKey;
+    
+    if (!apiKey) {
+      console.warn('Geocode API key not configured');
+      return null;
+    }
+
+    const encodedAddress = encodeURIComponent(fullAddress);
+    const url = `https://api-v2.distancematrix.ai/maps/api/geocode/json?address=${encodedAddress}&key=${apiKey}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn('Erreur lors de l\'appel à l\'API de géocodage');
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const result = data.results[0];
+      if (result.geometry && result.geometry.location) {
+        const lat = Number(result.geometry.location.lat);
+        const lng = Number(result.geometry.location.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          return { lat, lng };
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Erreur lors du géocodage de l\'adresse du client:', err);
+    return null;
+  }
+};
+
 const fetchRestaurantCoordinates = async (restaurantId: string): Promise<Coordinates | null> => {
   try {
-    // Récupérer l'adresse du restaurant depuis restaurant_settings
+    // Récupérer les coordonnées du restaurant depuis restaurant_settings
+    // Note: les colonnes sont 'lat' et 'lng', pas 'latitude' et 'longitude'
     const { data, error } = await supabase
       .from('restaurant_settings')
-      .select('address_line1, city, province, postal_code, latitude, longitude')
+      .select('lat, lng')
       .eq('restaurant_id', restaurantId)
       .maybeSingle();
 
@@ -148,69 +245,19 @@ const fetchRestaurantCoordinates = async (restaurantId: string): Promise<Coordin
       return null;
     }
 
-    if (data) {
-      // Si les coordonnées sont directement dans la base de données
-      if (data.latitude && data.longitude) {
-        const lat = Number(data.latitude);
-        const lng = Number(data.longitude);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          return { lat, lng };
-        }
-      }
-
-      // Construire l'adresse complète à partir des colonnes
-      const addressParts = [
-        data.address_line1,
-        data.city,
-        data.province,
-        data.postal_code,
-      ].filter(Boolean);
-
-      if (addressParts.length > 0) {
-        const fullAddress = addressParts.join(', ');
-        const coords = await geocodeAddress(fullAddress);
-        if (coords) {
-          return coords;
-        }
-      }
-    }
-
-    return null;
-  } catch (err) {
-    console.warn('Erreur lors de la récupération des coordonnées du restaurant:', err);
-    return null;
-  }
-};
-
-const geocodeAddress = async (address: string): Promise<Coordinates | null> => {
-  try {
-    // Utiliser l'API Nominatim d'OpenStreetMap (gratuite, pas besoin de clé API)
-    const encodedAddress = encodeURIComponent(address);
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`,
-      {
-        headers: {
-          'User-Agent': 'MadakOMS-DeliveryApp/1.0',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    if (data && data.length > 0) {
-      const lat = Number(data[0].lat);
-      const lng = Number(data[0].lon);
+    if (data && data.lat && data.lng) {
+      const lat = Number(data.lat);
+      const lng = Number(data.lng);
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        console.log('[fetchRestaurantCoordinates] Restaurant coordinates:', { lat, lng });
         return { lat, lng };
       }
     }
 
+    console.warn('[fetchRestaurantCoordinates] No coordinates found for restaurant:', restaurantId);
     return null;
   } catch (err) {
-    console.warn('Erreur lors du géocodage:', err);
+    console.warn('Erreur lors de la récupération des coordonnées du restaurant:', err);
     return null;
   }
 };
@@ -227,6 +274,94 @@ const computeRestaurantToClientDistance = (
 
   const distance = haversineDistanceKm(restaurantCoords, destinationCoords);
   return `${distance.toFixed(1)} km`;
+};
+
+const getDistanceMatrixData = async (
+  restaurantCoords: Coordinates | null,
+  deliveryAddress: any
+): Promise<{ eta: string; distance: string; rawData?: {
+  origin_coords: Coordinates;
+  destination_coords: Coordinates;
+  duration_seconds: number;
+  distance_meters: number;
+  duration_text: string;
+  distance_text: string;
+  api_response: any;
+} } | null> => {
+  if (!restaurantCoords) {
+    return null;
+  }
+
+  // Essayer d'abord d'extraire les coordonnées directement
+  let destinationCoords = extractDestinationCoords(deliveryAddress);
+  
+  // Si les coordonnées ne sont pas disponibles, géocoder l'adresse
+  if (!destinationCoords) {
+    destinationCoords = await geocodeClientAddress(deliveryAddress);
+  }
+  
+  if (!destinationCoords) {
+    return null;
+  }
+
+  try {
+    const origins = `${restaurantCoords.lat},${restaurantCoords.lng}`;
+    const destinations = `${destinationCoords.lat},${destinationCoords.lng}`;
+    const extra = Constants.expoConfig?.extra as { distanceMatrixApiKey?: string } | undefined;
+    const apiKey = extra?.distanceMatrixApiKey;
+    
+    if (!apiKey) {
+      console.warn('Distance Matrix API key not configured');
+      return null;
+    }
+    
+    const url = `https://api.distancematrix.ai/maps/api/distancematrix/json?origins=${origins}&destinations=${destinations}&key=${apiKey}`;
+    
+    console.log('[getDistanceMatrixData] Calling API:', url);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn('Erreur lors de l\'appel à l\'API Distance Matrix');
+      return null;
+    }
+
+    const data = await response.json();
+    console.log('[getDistanceMatrixData] API Response:', JSON.stringify(data, null, 2));
+    
+    if (data.status === 'OK' && data.rows && data.rows[0] && data.rows[0].elements && data.rows[0].elements[0]) {
+      const element = data.rows[0].elements[0];
+      if (element.status === 'OK' && element.duration && element.distance) {
+        // duration.value est en secondes
+        const minutes = Math.ceil(element.duration.value / 60);
+        const eta = `${minutes} min`;
+        
+        // distance.text contient déjà le format (ex: "399 m" ou "3.3 km")
+        const distance = element.distance.text;
+        
+        console.log('[getDistanceMatrixData] Calculated ETA:', eta, 'Distance:', distance);
+        console.log('[getDistanceMatrixData] Raw duration.value:', element.duration.value, 'Raw distance.value:', element.distance.value);
+        
+        return { 
+          eta, 
+          distance,
+          rawData: {
+            origin_coords: restaurantCoords,
+            destination_coords: destinationCoords,
+            duration_seconds: element.duration.value,
+            distance_meters: element.distance.value,
+            duration_text: element.duration.text,
+            distance_text: element.distance.text,
+            api_response: data
+          }
+        };
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Erreur lors de l\'appel à l\'API Distance Matrix:', err);
+    return null;
+  }
 };
 
 const historyStatusLabel = (status: AssignedOrder['status']) => {
@@ -375,15 +510,15 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     [staff.staffUserId]
   );
 
-  const openMaps = useCallback((address: string) => {
+  const openMaps = useCallback((address: string, deliveryAddress?: any) => {
     if (!address) {
       return;
     }
+
+    // Encoder l'adresse pour l'URL
+    // Utiliser Google Maps sur toutes les plateformes
     const encoded = encodeURIComponent(address);
-    const url =
-      Platform.OS === 'ios'
-        ? `http://maps.apple.com/?daddr=${encoded}`
-        : `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
     Linking.openURL(url).catch(() => {
       Alert.alert('Erreur', 'Impossible d’ouvrir l’application de navigation.');
     });
@@ -424,23 +559,15 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
   const mapAvailableOrder = useCallback(
     (row: any) => {
     const addr = row.delivery_address ?? {};
-    const directAddress =
-      typeof addr.address === 'string' && addr.address.trim().length > 0
-        ? addr.address.trim()
-        : null;
+    const fullAddress = formatFullAddress(addr);
+    
+    // Extraire la ville pour l'affichage dans le header
+    const addressParts = fullAddress
+      .split(',')
+      .map((part: string) => part.trim())
+      .filter(Boolean);
 
-    const fallbackAddress =
-      addr.line1 ?? addr.address_line1 ?? addr.street ?? addr.formatted ?? '';
-
-    const addressText = directAddress ?? fallbackAddress;
-    const addressParts = addressText
-      ? addressText
-          .split(',')
-          .map((part: string) => part.trim())
-          .filter(Boolean)
-      : [];
-
-    const streetLabel = addressParts[0] ?? fallbackAddress ?? 'Adresse à confirmer';
+    const streetLabel = addressParts[0] ?? 'Adresse à confirmer';
     const cityLabel =
       addressParts[1] ??
       addr.city ??
@@ -457,7 +584,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       orderNumber,
       city: cityLabel,
       streetLabel,
-      address: addressText || streetLabel,
+      address: fullAddress,
         distance: restaurantCoords 
           ? computeRestaurantToClientDistance(restaurantCoords, row.delivery_address, fallbackDistance)
           : fallbackDistance,
@@ -522,6 +649,51 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     }
   }, [availableSoundPlayer, mapAvailableOrder, settings.soundEnabled, staff.restaurantId]);
 
+  const fetchStoredDistanceData = useCallback(async (orderId: string): Promise<{ eta: string | null; distance: string | null }> => {
+    try {
+      console.log('[fetchStoredDistanceData] Fetching for order:', orderId);
+      const { data, error } = await supabase
+        .from('order_events')
+        .select('payload, created_at')
+        .eq('order_id', orderId)
+        .eq('event_type', 'status_changed')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('[fetchStoredDistanceData] Error:', error);
+        return { eta: null, distance: null };
+      }
+
+      if (!data || data.length === 0) {
+        console.log('[fetchStoredDistanceData] No events found for order:', orderId);
+        return { eta: null, distance: null };
+      }
+
+      console.log('[fetchStoredDistanceData] Found', data.length, 'events for order:', orderId);
+      console.log('[fetchStoredDistanceData] Events:', JSON.stringify(data, null, 2));
+
+      // Trouver le premier événement 'assigned' avec estimated_delivery_time et estimated_distance
+      for (const event of data) {
+        const payload = event.payload as any;
+        console.log('[fetchStoredDistanceData] Checking event with payload:', JSON.stringify(payload, null, 2));
+        if (payload?.status === 'assigned') {
+          const result = {
+            eta: payload?.estimated_delivery_time || null,
+            distance: payload?.estimated_distance || null,
+          };
+          console.log('[fetchStoredDistanceData] Retrieved for order', orderId, ':', result);
+          return result;
+        }
+      }
+
+      console.log('[fetchStoredDistanceData] No assigned event found with distance data for order:', orderId);
+      return { eta: null, distance: null };
+    } catch (err) {
+      console.warn('Erreur lors de la récupération des données de distance stockées:', err);
+      return { eta: null, distance: null };
+    }
+  }, []);
+
   const fetchActiveOrders = useCallback(async () => {
     const statuses = ['assigned', 'enroute'];
     // En mode Coordinateur, on inclut aussi les commandes 'ready' pour pouvoir les assigner
@@ -574,6 +746,17 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       return;
     }
 
+    // Récupérer les ETAs et distances stockés pour toutes les commandes
+    const orderIds = data?.map((row: any) => row.id) ?? [];
+    const distanceDataPromises = orderIds.map((id: string) => fetchStoredDistanceData(id));
+    const storedDistanceData = await Promise.all(distanceDataPromises);
+    const etaMap = new Map<string, string | null>();
+    const distanceMap = new Map<string, string | null>();
+    orderIds.forEach((id: string, index: number) => {
+      etaMap.set(id, storedDistanceData[index].eta);
+      distanceMap.set(id, storedDistanceData[index].distance);
+    });
+
     const mapped =
       data?.map((row: any) => {
         const customerInfo = Array.isArray(row.customers) ? row.customers[0] : row.customers;
@@ -583,6 +766,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         const fallbackDistance = deriveDistance(orderNumber);
         const fallbackEta = deriveEta(orderNumber);
 
+        // Utiliser l'ETA et la distance stockés s'ils existent, sinon calculer
+        const storedETA = etaMap.get(row.id);
+        const storedDistance = distanceMap.get(row.id);
+        const displayETA = storedETA || computeEtaLabel(driverLocation, destinationCoords, fallbackEta);
+        const displayDistance = storedDistance || (restaurantCoords 
+          ? computeRestaurantToClientDistance(restaurantCoords, row.delivery_address, fallbackDistance)
+          : fallbackDistance);
+
         return {
           id: row.id,
           orderNumber: row.order_number,
@@ -590,14 +781,12 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           customerName: row.delivery_name || customerInfo?.first_name || null,
           customerPhone: customerInfo?.phone ?? null,
           customerEmail: customerInfo?.email ?? null,
-          customerAddress: row.delivery_address?.address ?? 'Adresse à confirmer',
+          customerAddress: formatFullAddress(row.delivery_address),
           itemsSummary: 'Détails disponibles après assignation',
           fulfillment: (row.fulfillment as 'delivery' | 'pickup') ?? 'delivery',
           paymentInfo: 'paid_online',
-          eta: computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
-          distance: restaurantCoords 
-            ? computeRestaurantToClientDistance(restaurantCoords, row.delivery_address, fallbackDistance)
-            : fallbackDistance,
+          eta: displayETA,
+          distance: displayDistance,
           status: row.status as AssignedOrder['status'],
           driverId: row.driver_id ?? null,
           driverName: driverInfo?.username ?? null,
@@ -607,11 +796,12 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           scheduledAt: row.scheduled_at ?? null,
           paymentMethod: Array.isArray(row.payments) ? row.payments[0]?.method ?? null : row.payments?.method ?? null,
           tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
-        } as AssignedOrder;
+          deliveryAddress: row.delivery_address,
+        } as AssignedOrder & { deliveryAddress?: any };
       }) ?? [];
 
     setActiveOrders(mapped);
-  }, [driverLocation, restaurantCoords, staff.restaurantId, staff.restaurantName, staff.staffUserId, settings.deliveryMode]);
+  }, [driverLocation, restaurantCoords, staff.restaurantId, staff.restaurantName, staff.staffUserId, settings.deliveryMode, fetchStoredDistanceData]);
 
   useEffect(() => {
     const loadRestaurantCoords = async () => {
@@ -836,6 +1026,43 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           style: 'default',
           onPress: async () => {
             try {
+              // Vérifier d'abord si les données sont déjà stockées pour éviter un appel API inutile
+              const storedData = await fetchStoredDistanceData(candidate.id);
+              let calculatedETA: string | null = storedData.eta;
+              let calculatedDistance: string | null = storedData.distance;
+              let distanceDataRaw: any = null;
+
+              // Si les données ne sont pas stockées, calculer avec l'API Distance Matrix
+              if (!calculatedETA || !calculatedDistance) {
+                // Récupérer l'adresse de livraison complète pour calculer l'ETA et la distance
+                const { data: orderData, error: fetchError } = await supabase
+                  .from('orders')
+                  .select('delivery_address')
+                  .eq('id', candidate.id)
+                  .maybeSingle();
+
+                if (fetchError) {
+                  console.warn('Erreur lors de la récupération de l\'adresse:', fetchError);
+                }
+
+                if (orderData?.delivery_address && restaurantCoords) {
+                  const distanceData = await getDistanceMatrixData(restaurantCoords, orderData.delivery_address);
+                  if (distanceData) {
+                    calculatedETA = distanceData.eta;
+                    calculatedDistance = distanceData.distance;
+                    distanceDataRaw = distanceData;
+                    console.log('[handleAcceptOrder] Storing ETA:', calculatedETA, 'Distance:', calculatedDistance);
+                    
+                    // Stocker aussi les données brutes pour le débogage
+                    if ('rawData' in distanceData && distanceData.rawData) {
+                      console.log('[handleAcceptOrder] Raw data:', JSON.stringify(distanceData.rawData, null, 2));
+                    }
+                  } else {
+                    console.warn('[handleAcceptOrder] No distance data returned from API');
+                  }
+                }
+              }
+
               const { error } = await supabase
                 .from('orders')
                 .update({ status: 'assigned', driver_id: staff.staffUserId })
@@ -845,7 +1072,34 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
                 throw error;
               }
 
-              await logOrderEvent(candidate.id, 'assigned', { driver_id: staff.staffUserId });
+              // Stocker l'ETA et la distance dans order_events si calculés
+              const eventPayload: Record<string, any> = { 
+                status: 'assigned', 
+                driver_id: staff.staffUserId 
+              };
+              if (calculatedETA) {
+                eventPayload.estimated_delivery_time = calculatedETA;
+              }
+              if (calculatedDistance) {
+                eventPayload.estimated_distance = calculatedDistance;
+              }
+              
+              // Stocker aussi les données brutes pour le débogage (si disponibles)
+              if (distanceDataRaw && 'rawData' in distanceDataRaw && distanceDataRaw.rawData) {
+                eventPayload.distance_calculation = {
+                  origin_coords: distanceDataRaw.rawData.origin_coords,
+                  destination_coords: distanceDataRaw.rawData.destination_coords,
+                  duration_seconds: distanceDataRaw.rawData.duration_seconds,
+                  distance_meters: distanceDataRaw.rawData.distance_meters,
+                  duration_text: distanceDataRaw.rawData.duration_text,
+                  distance_text: distanceDataRaw.rawData.distance_text,
+                  calculated_at: new Date().toISOString()
+                };
+              }
+
+              console.log('[handleAcceptOrder] Storing event payload:', JSON.stringify(eventPayload, null, 2));
+              await logOrderEvent(candidate.id, 'assigned', eventPayload);
+              console.log('[handleAcceptOrder] Event stored successfully');
 
               // Envoyer le SMS au client après l'assignation
               sendStatusSMS(candidate.id).catch((err) => {
@@ -1031,6 +1285,13 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           throw error ?? new Error('Commande introuvable.');
         }
 
+        // Récupérer la distance et l'ETA stockés
+        const storedData = await fetchStoredDistanceData(entryId);
+        const orderNumber = data.order_number ?? 0;
+        const destinationCoords = extractDestinationCoords(data.delivery_address);
+        const fallbackDistance = deriveDistance(orderNumber);
+        const fallbackEta = deriveEta(orderNumber);
+
         const customerRaw = Array.isArray(data.customers) ? data.customers[0] : data.customers;
         const dataWithDropInfo = data as any;
         const paymentInfo = Array.isArray(dataWithDropInfo.payments) ? dataWithDropInfo.payments[0] : dataWithDropInfo.payments;
@@ -1050,13 +1311,14 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
           customerName: (data as any).delivery_name || customerRaw?.first_name || null,
           customerPhone: customerRaw?.phone ?? null,
           customerEmail: customerRaw?.email ?? null,
-          customerAddress:
-            data.delivery_address?.address ?? formatAddress(data.delivery_address) ?? 'Adresse à confirmer',
+          customerAddress: formatFullAddress(data.delivery_address),
           itemsSummary: 'Historique',
           fulfillment: data.fulfillment,
           paymentInfo: 'paid_online',
-          eta: '',
-          distance: '',
+          eta: storedData.eta || computeEtaLabel(driverLocation, destinationCoords, fallbackEta),
+          distance: storedData.distance || (restaurantCoords 
+            ? computeRestaurantToClientDistance(restaurantCoords, data.delivery_address, fallbackDistance)
+            : fallbackDistance),
           status: data.status as AssignedOrder['status'],
           dropOption: dataWithDropInfo.drop_option ?? null,
           apartmentSuite: dataWithDropInfo.apartment_suite ?? null,
@@ -1073,7 +1335,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         setPreviewLoading(false);
       }
     },
-    [staff.restaurantName]
+    [staff.restaurantName, fetchStoredDistanceData, driverLocation, restaurantCoords]
   );
 
   const content = useMemo(() => {
@@ -1085,7 +1347,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               key={activeOrder.id}
               order={activeOrder}
               deliveryMode={settings.deliveryMode}
-              onNavigate={() => openMaps(activeOrder.customerAddress)}
+              onNavigate={() => openMaps(activeOrder.customerAddress, (activeOrder as any).deliveryAddress)}
               onChangeStatus={(nextStatus) =>
                 handleStatusChangeWithConfirmation(
                   activeOrder.id,
@@ -1162,6 +1424,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
               fulfillment: 'delivery',
               paymentInfo: 'paid_online',
               eta: candidate.eta,
+              distance: candidate.distance,
               status: candidate.status ?? 'ready',
               paymentMethod: candidate.paymentMethod ?? null,
               tipAmount: candidate.tipAmount ?? null,
@@ -1624,24 +1887,32 @@ function AvailableOrdersList({
             <Text style={styles.availableCity}>{order.city}</Text>
           </View>
           <Text style={styles.availableAddress}>{order.address}</Text>
-          {order.scheduledAt ? (
-            <Text style={[styles.availableMeta, { marginTop: 4 }]}>
-              Prévue : {formatDateTimeWithMonthName(order.scheduledAt)}
-            </Text>
-          ) : null}
-          {order.paymentMethod ? (
-            <Text style={[styles.availableMeta, { marginTop: 4 }]}>
-              Paiement : {translatePaymentMethod(order.paymentMethod)}
-            </Text>
-          ) : null}
-          {order.tipAmount && order.tipAmount > 0 ? (
-            <Text style={[styles.availableMeta, { marginTop: 4 }]}>
-              Pourboire : ${order.tipAmount.toFixed(2)}
-            </Text>
-          ) : null}
-          <View style={styles.availableMetaRow}>
-            <Text style={styles.availableMeta}>{order.distance}</Text>
-            <Text style={styles.availableMeta}>{order.eta}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 4 }}>
+            <View style={{ flex: 1 }}>
+              {order.scheduledAt ? (
+                <Text style={styles.availableMeta}>
+                  Prévue : {formatDateTimeWithMonthName(order.scheduledAt)}
+                </Text>
+              ) : null}
+              {order.paymentMethod ? (
+                <Text style={styles.availableMeta}>
+                  Paiement : {translatePaymentMethod(order.paymentMethod)}
+                </Text>
+              ) : null}
+              {order.tipAmount && order.tipAmount > 0 ? (
+                <Text style={styles.availableMeta}>
+                  Pourboire : ${order.tipAmount.toFixed(2)}
+                </Text>
+              ) : null}
+            </View>
+            {order.eta ? (
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.availableMeta}>{order.eta}</Text>
+                {order.distance ? (
+                  <Text style={styles.availableMeta}>{order.distance}</Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
           <TouchableOpacity style={styles.availableSecondaryButton} onPress={() => onPreview(order)}>
             <Text style={styles.availableSecondaryButtonText}>Voir les informations</Text>
@@ -1741,7 +2012,14 @@ function DeliveryCard({
             </Text>
           ) : null}
         </View>
-        {order.eta ? <Text style={styles.availableMeta}>ETA : {order.eta}</Text> : null}
+        {order.eta ? (
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.availableMeta}>ETA : {order.eta}</Text>
+            {order.distance ? (
+              <Text style={styles.availableMeta}>{order.distance}</Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       {!isPreview && (
