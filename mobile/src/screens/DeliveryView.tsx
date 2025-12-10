@@ -601,6 +601,95 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     [driverLocation, restaurantCoords]
   );
 
+  const fetchStoredDistanceData = useCallback(async (orderId: string): Promise<{ eta: string | null; distance: string | null }> => {
+    try {
+      // Chercher dans tous les types d'événements (distance_calculated et status_changed)
+      const { data, error } = await supabase
+        .from('order_events')
+        .select('payload, event_type, created_at')
+        .eq('order_id', orderId)
+        .in('event_type', ['distance_calculated', 'status_changed'])
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('[fetchStoredDistanceData] Error:', error);
+        return { eta: null, distance: null };
+      }
+
+      if (!data || data.length === 0) {
+        return { eta: null, distance: null };
+      }
+
+      // Chercher d'abord dans les événements 'distance_calculated', puis dans 'assigned'
+      for (const event of data) {
+        const payload = event.payload as any;
+        
+        // Événement de calcul de distance pré-acceptation
+        if (event.event_type === 'distance_calculated' && payload?.estimated_delivery_time && payload?.estimated_distance) {
+          return {
+            eta: payload.estimated_delivery_time,
+            distance: payload.estimated_distance,
+          };
+        }
+        
+        // Événement d'assignation (ancien format)
+        if (event.event_type === 'status_changed' && payload?.status === 'assigned' && payload?.estimated_delivery_time) {
+          return {
+            eta: payload.estimated_delivery_time || null,
+            distance: payload.estimated_distance || null,
+          };
+        }
+      }
+
+      return { eta: null, distance: null };
+    } catch (err) {
+      console.warn('Erreur lors de la récupération des données de distance stockées:', err);
+      return { eta: null, distance: null };
+    }
+  }, []);
+
+  // Calculer et stocker la distance pour une commande (appelé UNE seule fois par commande)
+  const calculateAndStoreDistance = useCallback(async (orderId: string, deliveryAddress: any): Promise<{ eta: string | null; distance: string | null }> => {
+    // Vérifier si déjà calculé
+    const existing = await fetchStoredDistanceData(orderId);
+    if (existing.eta && existing.distance) {
+      return existing;
+    }
+
+    if (!restaurantCoords || !deliveryAddress) {
+      return { eta: null, distance: null };
+    }
+
+    try {
+      const distanceData = await getDistanceMatrixData(restaurantCoords, deliveryAddress);
+      if (distanceData) {
+        // Stocker le résultat dans order_events avec event_type 'distance_calculated'
+        const eventPayload = {
+          estimated_delivery_time: distanceData.eta,
+          estimated_distance: distanceData.distance,
+          calculated_at: new Date().toISOString(),
+        };
+
+        await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_type: 'system',
+          actor_id: null,
+          event_type: 'distance_calculated',
+          payload: eventPayload,
+        });
+
+        return {
+          eta: distanceData.eta,
+          distance: distanceData.distance,
+        };
+      }
+    } catch (err) {
+      console.warn('[calculateAndStoreDistance] Error:', err);
+    }
+
+    return { eta: null, distance: null };
+  }, [restaurantCoords, fetchStoredDistanceData]);
+
   const fetchAvailableOrders = useCallback(async () => {
     setAvailableLoading(true);
     try {
@@ -618,8 +707,62 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         throw error;
       }
 
-      const normalized = data?.map(mapAvailableOrder) ?? [];
-      const readyOrders = normalized.filter((candidate) => candidate.status === 'ready');
+      const readyOrdersRaw = data?.filter((row: any) => row.status === 'ready') ?? [];
+      
+      // Calculer la distance pour les nouvelles commandes (API appelée UNE seule fois par commande)
+      const distancePromises = readyOrdersRaw.map(async (row: any) => {
+        const distanceData = await calculateAndStoreDistance(row.id, row.delivery_address);
+        return { orderId: row.id, ...distanceData };
+      });
+      
+      const distanceResults = await Promise.all(distancePromises);
+      const distanceMap = new Map<string, { eta: string | null; distance: string | null }>();
+      distanceResults.forEach((result) => {
+        distanceMap.set(result.orderId, { eta: result.eta, distance: result.distance });
+      });
+
+      // Mapper les commandes avec les données de distance calculées
+      const readyOrders = readyOrdersRaw.map((row: any) => {
+        const addr = row.delivery_address ?? {};
+        const fullAddress = formatFullAddress(addr);
+        
+        const addressParts = fullAddress
+          .split(',')
+          .map((part: string) => part.trim())
+          .filter(Boolean);
+
+        const streetLabel = addressParts[0] ?? 'Adresse à confirmer';
+        const cityLabel = addressParts[1] ?? addr.city ?? addr.locality ?? addr.municipality ?? 'Ville à confirmer';
+        const orderNumber = row.order_number ?? 0;
+        const destinationCoords = extractDestinationCoords(row.delivery_address);
+        const fallbackDistance = deriveDistance(orderNumber);
+        const fallbackEta = deriveEta(orderNumber);
+
+        // Utiliser les données de distance calculées par l'API si disponibles
+        const storedData = distanceMap.get(row.id);
+        const displayDistance = storedData?.distance || (restaurantCoords 
+          ? computeRestaurantToClientDistance(restaurantCoords, row.delivery_address, fallbackDistance)
+          : fallbackDistance);
+        const displayEta = storedData?.eta || computeEtaLabel(driverLocation, destinationCoords, fallbackEta);
+
+        return {
+          id: row.id,
+          orderNumber,
+          city: cityLabel,
+          streetLabel,
+          address: fullAddress,
+          distance: displayDistance,
+          eta: displayEta,
+          status: (row.status as AssignedOrder['status']) ?? 'ready',
+          customerName: row.delivery_name || row.customer?.first_name || null,
+          customerPhone: row.customer?.phone ?? null,
+          customerEmail: row.customer?.email ?? null,
+          scheduledAt: row.scheduled_at ?? null,
+          paymentMethod: Array.isArray(row.payments) ? row.payments[0]?.method ?? null : row.payments?.method ?? null,
+          tipAmount: row.tip_amount ? Number(row.tip_amount) : null,
+        };
+      });
+
       const nextIds = new Set(readyOrders.map((order) => order.id));
 
       const hasNew =
@@ -647,52 +790,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     } finally {
       setAvailableLoading(false);
     }
-  }, [availableSoundPlayer, mapAvailableOrder, settings.soundEnabled, staff.restaurantId]);
-
-  const fetchStoredDistanceData = useCallback(async (orderId: string): Promise<{ eta: string | null; distance: string | null }> => {
-    try {
-      console.log('[fetchStoredDistanceData] Fetching for order:', orderId);
-      const { data, error } = await supabase
-        .from('order_events')
-        .select('payload, created_at')
-        .eq('order_id', orderId)
-        .eq('event_type', 'status_changed')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('[fetchStoredDistanceData] Error:', error);
-        return { eta: null, distance: null };
-      }
-
-      if (!data || data.length === 0) {
-        console.log('[fetchStoredDistanceData] No events found for order:', orderId);
-        return { eta: null, distance: null };
-      }
-
-      console.log('[fetchStoredDistanceData] Found', data.length, 'events for order:', orderId);
-      console.log('[fetchStoredDistanceData] Events:', JSON.stringify(data, null, 2));
-
-      // Trouver le premier événement 'assigned' avec estimated_delivery_time et estimated_distance
-      for (const event of data) {
-        const payload = event.payload as any;
-        console.log('[fetchStoredDistanceData] Checking event with payload:', JSON.stringify(payload, null, 2));
-        if (payload?.status === 'assigned') {
-          const result = {
-            eta: payload?.estimated_delivery_time || null,
-            distance: payload?.estimated_distance || null,
-          };
-          console.log('[fetchStoredDistanceData] Retrieved for order', orderId, ':', result);
-          return result;
-        }
-      }
-
-      console.log('[fetchStoredDistanceData] No assigned event found with distance data for order:', orderId);
-      return { eta: null, distance: null };
-    } catch (err) {
-      console.warn('Erreur lors de la récupération des données de distance stockées:', err);
-      return { eta: null, distance: null };
-    }
-  }, []);
+  }, [availableSoundPlayer, calculateAndStoreDistance, driverLocation, restaurantCoords, settings.soundEnabled, staff.restaurantId]);
 
   const fetchActiveOrders = useCallback(async () => {
     const statuses = ['assigned', 'enroute'];
@@ -1015,7 +1113,126 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
     };
   }, [settings.gpsTracking, upsertDriverLocation]);
 
+  // Logique d'acceptation de commande extraite pour réutilisation
+  const performAcceptOrder = async (candidate: AvailableOrder) => {
+    try {
+      console.log('[handleAcceptOrder] Starting for order:', candidate.id);
+      console.log('[handleAcceptOrder] restaurantCoords:', restaurantCoords);
+      
+      // Vérifier d'abord si les données sont déjà stockées pour éviter un appel API inutile
+      const storedData = await fetchStoredDistanceData(candidate.id);
+      let calculatedETA: string | null = storedData.eta;
+      let calculatedDistance: string | null = storedData.distance;
+      let distanceDataRaw: any = null;
+
+      // Si les données ne sont pas stockées, calculer avec l'API Distance Matrix
+      if (!calculatedETA || !calculatedDistance) {
+        // Récupérer l'adresse de livraison complète pour calculer l'ETA et la distance
+        const { data: orderData, error: fetchError } = await supabase
+          .from('orders')
+          .select('delivery_address')
+          .eq('id', candidate.id)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.warn('Erreur lors de la récupération de l\'adresse:', fetchError);
+        }
+
+        console.log('[handleAcceptOrder] delivery_address:', orderData?.delivery_address ? 'present' : 'missing');
+        console.log('[handleAcceptOrder] restaurantCoords:', restaurantCoords ? 'present' : 'missing');
+        
+        if (orderData?.delivery_address && restaurantCoords) {
+          console.log('[handleAcceptOrder] Calling Distance Matrix API...');
+          const distanceData = await getDistanceMatrixData(restaurantCoords, orderData.delivery_address);
+          if (distanceData) {
+            calculatedETA = distanceData.eta;
+            calculatedDistance = distanceData.distance;
+            distanceDataRaw = distanceData;
+            console.log('[handleAcceptOrder] API returned - ETA:', calculatedETA, 'Distance:', calculatedDistance);
+            
+            // Stocker aussi les données brutes pour le débogage
+            if ('rawData' in distanceData && distanceData.rawData) {
+              console.log('[handleAcceptOrder] Raw data:', JSON.stringify(distanceData.rawData, null, 2));
+            }
+          } else {
+            console.warn('[handleAcceptOrder] No distance data returned from API');
+          }
+        } else {
+          console.warn('[handleAcceptOrder] Skipping API call - missing delivery_address or restaurantCoords');
+        }
+      }
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'assigned', driver_id: staff.staffUserId })
+        .eq('id', candidate.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // Stocker l'ETA et la distance dans order_events si calculés
+      const eventPayload: Record<string, any> = { 
+        status: 'assigned', 
+        driver_id: staff.staffUserId 
+      };
+      if (calculatedETA) {
+        eventPayload.estimated_delivery_time = calculatedETA;
+      }
+      if (calculatedDistance) {
+        eventPayload.estimated_distance = calculatedDistance;
+      }
+      
+      // Stocker aussi les données brutes pour le débogage (si disponibles)
+      if (distanceDataRaw && 'rawData' in distanceDataRaw && distanceDataRaw.rawData) {
+        eventPayload.distance_calculation = {
+          origin_coords: distanceDataRaw.rawData.origin_coords,
+          destination_coords: distanceDataRaw.rawData.destination_coords,
+          duration_seconds: distanceDataRaw.rawData.duration_seconds,
+          distance_meters: distanceDataRaw.rawData.distance_meters,
+          duration_text: distanceDataRaw.rawData.duration_text,
+          distance_text: distanceDataRaw.rawData.distance_text,
+          calculated_at: new Date().toISOString()
+        };
+      }
+
+      console.log('[handleAcceptOrder] Storing event payload:', JSON.stringify(eventPayload, null, 2));
+      await logOrderEvent(candidate.id, 'assigned', eventPayload);
+      console.log('[handleAcceptOrder] Event stored successfully');
+
+      // Envoyer le SMS au client après l'assignation
+      sendStatusSMS(candidate.id).catch((err) => {
+        console.error('Erreur lors de l\'envoi du SMS:', err);
+      });
+
+      setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
+      setDeliveryTab('current');
+      setPreviewOrder(null);
+      fetchActiveOrders();
+      fetchAvailableOrders();
+    } catch (err) {
+      if (Platform.OS === 'web') {
+        window.alert(err instanceof Error ? err.message : 'Impossible d\'accepter la commande.');
+      } else {
+        Alert.alert(
+          'Erreur',
+          err instanceof Error ? err.message : 'Impossible d\'accepter la commande.'
+        );
+      }
+    }
+  };
+
   const handleAcceptOrder = async (candidate: AvailableOrder) => {
+    // Sur web, utiliser window.confirm pour une meilleure compatibilité
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`Voulez-vous accepter la commande #${candidate.orderNumber} ?`);
+      if (confirmed) {
+        await performAcceptOrder(candidate);
+      }
+      return;
+    }
+    
+    // Sur mobile, utiliser Alert.alert
     Alert.alert(
       'Accepter la commande',
       `Voulez-vous accepter la commande #${candidate.orderNumber} ?`,
@@ -1024,100 +1241,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         {
           text: 'Accepter',
           style: 'default',
-          onPress: async () => {
-            try {
-              // Vérifier d'abord si les données sont déjà stockées pour éviter un appel API inutile
-              const storedData = await fetchStoredDistanceData(candidate.id);
-              let calculatedETA: string | null = storedData.eta;
-              let calculatedDistance: string | null = storedData.distance;
-              let distanceDataRaw: any = null;
-
-              // Si les données ne sont pas stockées, calculer avec l'API Distance Matrix
-              if (!calculatedETA || !calculatedDistance) {
-                // Récupérer l'adresse de livraison complète pour calculer l'ETA et la distance
-                const { data: orderData, error: fetchError } = await supabase
-                  .from('orders')
-                  .select('delivery_address')
-                  .eq('id', candidate.id)
-                  .maybeSingle();
-
-                if (fetchError) {
-                  console.warn('Erreur lors de la récupération de l\'adresse:', fetchError);
-                }
-
-                if (orderData?.delivery_address && restaurantCoords) {
-                  const distanceData = await getDistanceMatrixData(restaurantCoords, orderData.delivery_address);
-                  if (distanceData) {
-                    calculatedETA = distanceData.eta;
-                    calculatedDistance = distanceData.distance;
-                    distanceDataRaw = distanceData;
-                    console.log('[handleAcceptOrder] Storing ETA:', calculatedETA, 'Distance:', calculatedDistance);
-                    
-                    // Stocker aussi les données brutes pour le débogage
-                    if ('rawData' in distanceData && distanceData.rawData) {
-                      console.log('[handleAcceptOrder] Raw data:', JSON.stringify(distanceData.rawData, null, 2));
-                    }
-                  } else {
-                    console.warn('[handleAcceptOrder] No distance data returned from API');
-                  }
-                }
-              }
-
-              const { error } = await supabase
-                .from('orders')
-                .update({ status: 'assigned', driver_id: staff.staffUserId })
-                .eq('id', candidate.id);
-
-              if (error) {
-                throw error;
-              }
-
-              // Stocker l'ETA et la distance dans order_events si calculés
-              const eventPayload: Record<string, any> = { 
-                status: 'assigned', 
-                driver_id: staff.staffUserId 
-              };
-              if (calculatedETA) {
-                eventPayload.estimated_delivery_time = calculatedETA;
-              }
-              if (calculatedDistance) {
-                eventPayload.estimated_distance = calculatedDistance;
-              }
-              
-              // Stocker aussi les données brutes pour le débogage (si disponibles)
-              if (distanceDataRaw && 'rawData' in distanceDataRaw && distanceDataRaw.rawData) {
-                eventPayload.distance_calculation = {
-                  origin_coords: distanceDataRaw.rawData.origin_coords,
-                  destination_coords: distanceDataRaw.rawData.destination_coords,
-                  duration_seconds: distanceDataRaw.rawData.duration_seconds,
-                  distance_meters: distanceDataRaw.rawData.distance_meters,
-                  duration_text: distanceDataRaw.rawData.duration_text,
-                  distance_text: distanceDataRaw.rawData.distance_text,
-                  calculated_at: new Date().toISOString()
-                };
-              }
-
-              console.log('[handleAcceptOrder] Storing event payload:', JSON.stringify(eventPayload, null, 2));
-              await logOrderEvent(candidate.id, 'assigned', eventPayload);
-              console.log('[handleAcceptOrder] Event stored successfully');
-
-              // Envoyer le SMS au client après l'assignation
-              sendStatusSMS(candidate.id).catch((err) => {
-                console.error('Erreur lors de l\'envoi du SMS:', err);
-              });
-
-              setAvailableOrders((list) => list.filter((item) => item.id !== candidate.id));
-              setDeliveryTab('current');
-              setPreviewOrder(null);
-              fetchActiveOrders();
-              fetchAvailableOrders();
-            } catch (err) {
-              Alert.alert(
-                'Erreur',
-                err instanceof Error ? err.message : 'Impossible d’accepter la commande.'
-              );
-            }
-          },
+          onPress: () => performAcceptOrder(candidate),
         },
       ]
     );
