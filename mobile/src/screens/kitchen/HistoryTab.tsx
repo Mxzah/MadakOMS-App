@@ -53,84 +53,129 @@ export function HistoryTab({
   const [detail, setDetail] = useState<KitchenOrder | null>(null);
 
   const fetchHistory = useCallback(async () => {
-    // Récupérer les événements de changement de statut vers 'ready' ou 'cancelled'
-    const { data: eventsData, error: eventsError } = await supabase
-      .from('order_events')
+    // Récupérer les heures d'ouverture du restaurant
+    const { data: settingsData } = await supabase
+      .from('restaurant_settings')
+      .select('hours_json')
+      .eq('restaurant_id', restaurantId)
+      .maybeSingle();
+
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinutes = now.getMinutes();
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+    // Par défaut, utiliser minuit comme début de journée
+    let startOfWorkday = new Date();
+    startOfWorkday.setHours(0, 0, 0, 0);
+
+    if (settingsData?.hours_json) {
+      const hoursJson = settingsData.hours_json as any;
+      
+      // Obtenir les infos du jour actuel et de la veille
+      const todayName = days[now.getDay()];
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayName = days[yesterday.getDay()];
+      
+      const todayHours = hoursJson[todayName];
+      const yesterdayHours = hoursJson[yesterdayName];
+
+      // Vérifier si on est dans la période "après minuit" de la veille
+      let isInYesterdayShift = false;
+      
+      if (yesterdayHours?.close) {
+        const [closeHour, closeMinute = 0] = yesterdayHours.close.split(':').map(Number);
+        
+        // Si l'heure de fermeture de la veille est après minuit (ex: 02:00)
+        // et qu'on est actuellement avant cette heure
+        if (closeHour < 12) { // Fermeture avant midi = probablement après minuit
+          const closeTimeInMinutes = closeHour * 60 + closeMinute;
+          const currentTimeInMinutes = currentHour * 60 + currentMinutes;
+          
+          if (currentTimeInMinutes < closeTimeInMinutes) {
+            // On est encore dans le "shift" de la veille
+            isInYesterdayShift = true;
+          }
+        }
+      }
+
+      if (isInYesterdayShift && yesterdayHours?.open) {
+        // Utiliser l'heure d'ouverture de la veille
+        const [openHour, openMinute = 0] = yesterdayHours.open.split(':').map(Number);
+        startOfWorkday = new Date(yesterday);
+        startOfWorkday.setHours(openHour, openMinute, 0, 0);
+      } else if (todayHours?.open) {
+        // Utiliser l'heure d'ouverture d'aujourd'hui
+        const [openHour, openMinute = 0] = todayHours.open.split(':').map(Number);
+        startOfWorkday = new Date(now);
+        startOfWorkday.setHours(openHour, openMinute, 0, 0);
+        
+        // Si on est avant l'heure d'ouverture d'aujourd'hui, utiliser la veille
+        if (now < startOfWorkday && yesterdayHours?.open) {
+          const [yOpenHour, yOpenMinute = 0] = yesterdayHours.open.split(':').map(Number);
+          startOfWorkday = new Date(yesterday);
+          startOfWorkday.setHours(yOpenHour, yOpenMinute, 0, 0);
+        }
+      }
+    }
+
+    const startDateISO = startOfWorkday.toISOString();
+
+    // Statuts à afficher dans l'historique
+    const historyStatuses = ['failed', 'assigned', 'completed', 'enroute', 'cancelled'];
+
+    // Récupérer directement les commandes avec les statuts souhaités
+    const { data: ordersData, error: ordersError } = await supabase
+      .from('orders')
       .select(
         `
           id,
-          order_id,
-          created_at,
-          payload,
-          orders!inner (
-            id,
-            order_number,
-            restaurant_id,
-            fulfillment,
-            updated_at,
-            completed_at,
-            cancelled_at,
-            cook_id,
-            cook:staff_users!cook_id (
-              username
-            )
+          order_number,
+          restaurant_id,
+          status,
+          fulfillment,
+          placed_at,
+          updated_at,
+          completed_at,
+          cancelled_at,
+          cook_id,
+          cook:staff_users!cook_id (
+            username
           )
         `
       )
-      .eq('event_type', 'status_changed')
-      .order('created_at', { ascending: false });
+      .eq('restaurant_id', restaurantId)
+      .in('status', historyStatuses)
+      .gte('placed_at', startDateISO)
+      .order('updated_at', { ascending: false });
 
-    if (eventsError) {
+    if (ordersError) {
       Alert.alert('Erreur', 'Impossible de charger l\'historique.');
       return;
     }
 
-    // Filtrer par restaurant_id et gérer les doublons (prendre le dernier événement pour chaque commande)
-    const orderMap = new Map<string, any>();
-
-    eventsData?.forEach((event: any) => {
-      const order = Array.isArray(event.orders) ? event.orders[0] : event.orders;
-      if (!order || order.restaurant_id !== restaurantId) return;
-
-      const payload = event.payload || {};
-      const status = payload.status;
-
-      // Filtrer uniquement les événements avec status 'ready' ou 'cancelled'
-      if (status !== 'ready' && status !== 'cancelled') return;
-
-      // En mode "Individuel", on filtre par cook_id
-      if (kitchenMode === 'individual' && order.cook_id !== staffUserId) return;
-
-      const orderId = order.id;
-
-      // Si on n'a pas encore cette commande, ou si cet événement est plus récent, on le garde
-      if (!orderMap.has(orderId) || new Date(event.created_at) > new Date(orderMap.get(orderId).eventCreatedAt)) {
+    // Mapper les commandes
+    const mapped: HistoryOrder[] = (ordersData ?? [])
+      .filter((order: any) => {
+        // En mode "Individuel", on filtre par cook_id
+        if (kitchenMode === 'individual' && order.cook_id !== staffUserId) return false;
+        return true;
+      })
+      .map((order: any) => {
         const cookInfo = Array.isArray(order.cook) ? order.cook[0] : order.cook;
-        orderMap.set(orderId, {
+        return {
           id: order.id,
           orderNumber: order.order_number ?? null,
-          status: status,
+          status: order.status,
           fulfillment: order.fulfillment,
           updatedAt: order.updated_at,
           completedAt: order.completed_at,
           cancelledAt: order.cancelled_at,
-          placedAt: order.updated_at,
+          placedAt: order.placed_at,
           cookName: cookInfo?.username ?? null,
-          eventCreatedAt: event.created_at,
-        });
-      }
-    });
-
-    const mapped: HistoryOrder[] = Array.from(orderMap.values())
-      .map((item) => {
-        // Utiliser eventCreatedAt comme updatedAt pour le tri et l'affichage
-        const { eventCreatedAt, ...rest } = item;
-        return {
-          ...rest,
-          updatedAt: eventCreatedAt,
         };
-      })
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      });
 
     setHistory(mapped);
     setLoading(false);
@@ -147,18 +192,12 @@ export function HistoryTab({
   }, [fetchHistory]);
 
   const filteredHistory = useMemo(() => {
-    // Ne montrer que les commandes de la journée actuelle (depuis minuit)
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const cutoff = startOfToday.getTime();
-
+    // Filtrer par recherche seulement (le filtre par date est déjà fait dans la requête)
     return history.filter((order) => {
-      const updated = new Date(order.updatedAt).getTime();
-      const matchesDate = updated >= cutoff;
       const matchesSearch = search
         ? `${order.orderNumber ?? ''}`.toLowerCase().includes(search.toLowerCase())
         : true;
-      return matchesDate && matchesSearch;
+      return matchesSearch;
     });
   }, [history, search]);
 
@@ -236,7 +275,11 @@ export function HistoryTab({
                   </Text>
                   <View style={[styles.historyBadge, { backgroundColor: badge.backgroundColor }]}>
                     <Text style={[styles.historyBadgeText, { color: badge.color }]}>
-                      {item.status === 'ready' ? 'Terminée' : 'Annulée'}
+                      {item.status === 'completed' ? 'Complétée' :
+                       item.status === 'cancelled' ? 'Annulée' :
+                       item.status === 'failed' ? 'Échouée' :
+                       item.status === 'assigned' ? 'Assignée' :
+                       item.status === 'enroute' ? 'En route' : item.status}
                     </Text>
                   </View>
                 </View>
@@ -298,7 +341,11 @@ export function HistoryTab({
                   Commande #{detail.orderNumber ?? '—'}
                 </Text>
                 <Text style={[styles.modalMeta, { color: theme.textSecondary }]}>
-                  {detail.status === 'ready' ? 'Terminée' : 'Annulée'}
+                  {detail.status === 'completed' ? 'Complétée' :
+                   detail.status === 'cancelled' ? 'Annulée' :
+                   detail.status === 'failed' ? 'Échouée' :
+                   detail.status === 'assigned' ? 'Assignée' :
+                   detail.status === 'enroute' ? 'En route' : detail.status}
                 </Text>
                 <View style={[styles.modalSection, { backgroundColor: theme.surfaceMuted }]}>
                   <Text style={[styles.modalSectionTitle, { color: theme.textPrimary }]}>

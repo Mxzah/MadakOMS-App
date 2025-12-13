@@ -56,7 +56,8 @@ export function OrdersTab({
                 key={id}
                 style={[
                   styles.segment,
-                  isActive && { ...styles.segmentActive, backgroundColor: currentTheme.pillActiveBg },
+                  { backgroundColor: isActive ? currentTheme.pillActiveBg : 'transparent' },
+                  isActive && styles.segmentActive,
                 ]}
                 onPress={() => setDateFilter(id)}
               >
@@ -64,7 +65,6 @@ export function OrdersTab({
                   style={[
                     styles.segmentText,
                     { color: isActive ? currentTheme.pillActiveText : currentTheme.textSecondary },
-                    isActive && styles.segmentTextActive,
                   ]}
                 >
                   {id === 'today'
@@ -88,7 +88,8 @@ export function OrdersTab({
                 key={id}
                 style={[
                   styles.segmentSmall,
-                  isActive && { ...styles.segmentActive, backgroundColor: currentTheme.pillActiveBg },
+                  { backgroundColor: isActive ? currentTheme.pillActiveBg : 'transparent' },
+                  isActive && styles.segmentActive,
                 ]}
                 onPress={() => setFulfillmentFilter(id)}
               >
@@ -96,7 +97,6 @@ export function OrdersTab({
                   style={[
                     styles.segmentText,
                     { color: isActive ? currentTheme.pillActiveText : currentTheme.textSecondary },
-                    isActive && styles.segmentTextActive,
                   ]}
                 >
                   {id === 'all' ? 'Tous' : id === 'pickup' ? 'À emporter' : 'Livraison'}

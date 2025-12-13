@@ -300,12 +300,9 @@ export function OrdersTab({
 
   return (
     <View style={styles.flex}>
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.scrollBody}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        <View style={styles.filterRow}>
+      {/* Filtres fixes en haut */}
+      <View style={styles.filterRowContainer}>
+        <View style={[styles.filterRow, { backgroundColor: theme.surfaceMuted }]}>
           {ORDER_FILTERS.map((filter) => {
             const isActive = selectedFilter === filter.id;
             return (
@@ -313,7 +310,8 @@ export function OrdersTab({
                 key={filter.id}
                 style={[
                   styles.filterPill,
-                  { backgroundColor: isActive ? theme.pillActiveBg : theme.surfaceMuted },
+                  { backgroundColor: isActive ? theme.pillActiveBg : 'transparent' },
+                  isActive && styles.filterPillActive,
                 ]}
                 onPress={() => setSelectedFilter(filter.id)}
               >
@@ -329,7 +327,13 @@ export function OrdersTab({
             );
           })}
         </View>
+      </View>
 
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scrollBodyNoFilterPadding}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {loading ? (
           <View style={styles.centered}>
             <ActivityIndicator color={colors.accent} />
@@ -676,8 +680,11 @@ function OrderDetailModal({
                 </TouchableOpacity>
               )}
               {order.status === 'received' && (
-                <TouchableOpacity style={styles.secondaryAction} onPress={onRefuse}>
-                  <Text style={[styles.secondaryActionText, { color: colors.danger }]}>Refuser</Text>
+                <TouchableOpacity 
+                  style={[styles.primaryAction, { backgroundColor: '#DC2626' }]} 
+                  onPress={onRefuse}
+                >
+                  <Text style={styles.primaryActionText}>Refuser</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={closeButtonStyle} onPress={onClose}>

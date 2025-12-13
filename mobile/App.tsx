@@ -230,10 +230,19 @@ export default function App() {
       );
       setFeedback(null);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "La connexion a échoué. Vérifiez vos accès ou réessayez plus tard.";
+      let message: string;
+      
+      if (err instanceof Error) {
+        // Traduire les messages d'erreur de Supabase
+        const errorMessage = err.message.toLowerCase();
+        if (errorMessage.includes('invalid login credentials') || errorMessage.includes('invalid credentials')) {
+          message = 'Identifiants invalides. Vérifiez votre nom d\'utilisateur et mot de passe.';
+        } else {
+          message = err.message;
+        }
+      } else {
+        message = "La connexion a échoué. Vérifiez vos accès ou réessayez plus tard.";
+      }
 
       setFeedback({ type: 'error', message });
     } finally {

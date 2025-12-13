@@ -38,6 +38,7 @@ import { sendStatusSMS } from '../utils/smsHelpers';
 const lightColors = {
   background: '#F5F6FB',
   surface: '#FFFFFF',
+  surfaceMuted: '#E5E7EB',
   dark: '#1B1C1F',
   muted: '#6B7280',
   border: '#E5E7EB',
@@ -47,6 +48,7 @@ const lightColors = {
 const darkColors = {
   background: '#0B1120',
   surface: '#111827',
+  surfaceMuted: '#1F2937',
   dark: '#F8FAFC',
   muted: '#94A3B8',
   border: '#1F2937',
@@ -659,8 +661,13 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
 
   // Calculer et stocker la distance pour une commande (appelé UNE seule fois par commande)
   const calculateAndStoreDistance = useCallback(async (orderId: string, deliveryAddress: any): Promise<{ eta: string | null; distance: string | null }> => {
-    // Si le calcul de distance est désactivé ou pas de clé API, ne pas appeler l'API
-    if (!distanceCalculationEnabled || !distanceMatrixApiKey) {
+    // Vérifier d'abord si le calcul de distance est activé (même si une clé API existe)
+    if (!distanceCalculationEnabled) {
+      return { eta: null, distance: null };
+    }
+
+    // Vérifier ensuite si une clé API est disponible
+    if (!distanceMatrixApiKey) {
       return { eta: null, distance: null };
     }
 
@@ -724,6 +731,7 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
       const readyOrdersRaw = data?.filter((row: any) => row.status === 'ready') ?? [];
       
       // Calculer la distance pour les nouvelles commandes (API appelée UNE seule fois par commande)
+      // Note: calculateAndStoreDistance vérifie distanceCalculationEnabled avant d'appeler l'API
       const distancePromises = readyOrdersRaw.map(async (row: any) => {
         const distanceData = await calculateAndStoreDistance(row.id, row.delivery_address);
         return { orderId: row.id, ...distanceData };
@@ -1802,59 +1810,37 @@ export function DeliveryView({ staff, onLogout }: DeliveryViewProps) {
         </View>
       </View>
 
-      <View style={styles.deliveryTabsRow}>
-        <TouchableOpacity
-          style={[styles.deliveryTabButton, deliveryTab === 'current' && styles.deliveryTabButtonActive]}
-          onPress={() => setDeliveryTab('current')}
-        >
-          <Text
-            style={[
-              styles.deliveryTabLabel,
-              deliveryTab === 'current' && styles.deliveryTabLabelActive,
-            ]}
-          >
-            Livraisons actives
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.deliveryTabButton, deliveryTab === 'available' && styles.deliveryTabButtonActive]}
-          onPress={() => setDeliveryTab('available')}
-        >
-          <Text
-            style={[
-              styles.deliveryTabLabel,
-              deliveryTab === 'available' && styles.deliveryTabLabelActive,
-            ]}
-          >
-            Commandes disponibles
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.deliveryTabButton, deliveryTab === 'history' && styles.deliveryTabButtonActive]}
-          onPress={() => setDeliveryTab('history')}
-        >
-          <Text
-            style={[
-              styles.deliveryTabLabel,
-              deliveryTab === 'history' && styles.deliveryTabLabelActive,
-            ]}
-          >
-            Historique
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.deliveryTabButton, deliveryTab === 'settings' && styles.deliveryTabButtonActive]}
-          onPress={() => setDeliveryTab('settings')}
-        >
-          <Text
-            style={[
-              styles.deliveryTabLabel,
-              deliveryTab === 'settings' && styles.deliveryTabLabelActive,
-            ]}
-          >
-            Réglages
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.deliveryTabsRow, { backgroundColor: palette.surfaceMuted }]}>
+        {(['current', 'available', 'history', 'settings'] as const).map((tab) => {
+          const isActive = deliveryTab === tab;
+          const label = tab === 'current'
+            ? 'Livraisons actives'
+            : tab === 'available'
+            ? 'Commandes disponibles'
+            : tab === 'history'
+            ? 'Historique'
+            : 'Réglages';
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.deliveryTabButton,
+                { backgroundColor: isActive ? palette.accent : 'transparent' },
+                isActive && styles.deliveryTabButtonActive,
+              ]}
+              onPress={() => setDeliveryTab(tab)}
+            >
+              <Text
+                style={[
+                  styles.deliveryTabLabel,
+                  { color: isActive ? '#FFFFFF' : palette.muted },
+                ]}
+              >
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <ScrollView contentContainerStyle={styles.deliveryWrapper}>{content}</ScrollView>
@@ -2321,26 +2307,28 @@ function createStyles(palette: Palette) {
     flexDirection: 'row',
     marginHorizontal: 20,
     marginBottom: 12,
-    gap: 12,
+    borderRadius: 12,
+    padding: 3,
   },
   deliveryTabButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    paddingVertical: 10,
+    borderRadius: 9,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   deliveryTabButtonActive: {
     backgroundColor: colors.accent,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   deliveryTabLabel: {
     color: colors.muted,
     fontWeight: '600',
+    fontSize: 13,
     textAlign: 'center',
   },
   deliveryTabLabelActive: {

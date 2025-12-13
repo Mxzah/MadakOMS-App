@@ -86,10 +86,13 @@ export const getPriorityFlags = (order: KitchenOrder) => {
   const placed = new Date(order.placedAt).getTime();
   const scheduled = order.scheduledAt ? new Date(order.scheduledAt).getTime() : null;
 
+  // Utiliser scheduledAt si disponible, sinon placedAt
+  const referenceTime = scheduled ?? placed;
+
   const lateThreshold = order.fulfillment === 'delivery' ? 15 : 10; // minutes
   if (
     (order.status === 'received' || order.status === 'preparing') &&
-    now - placed > lateThreshold * 60000
+    now - referenceTime > lateThreshold * 60000
   ) {
     flags.push({ label: 'Retard', type: 'late' });
   }
@@ -192,10 +195,19 @@ export const extractRestaurantName = (
 
 export const historySubtitle = (order: HistoryOrder) => {
   if (order.status === 'completed' && order.completedAt) {
-    return `Terminée ${formatDateTime(order.completedAt)}`;
+    return `Complétée ${formatDateTime(order.completedAt)}`;
   }
   if (order.status === 'cancelled' && order.cancelledAt) {
     return `Annulée ${formatDateTime(order.cancelledAt)}`;
+  }
+  if (order.status === 'failed') {
+    return `Échouée ${formatDateTime(order.updatedAt)}`;
+  }
+  if (order.status === 'assigned') {
+    return `Assignée ${formatDateTime(order.updatedAt)}`;
+  }
+  if (order.status === 'enroute') {
+    return `En route ${formatDateTime(order.updatedAt)}`;
   }
   return `Modifiée ${formatDateTime(order.updatedAt)}`;
 };
@@ -203,11 +215,16 @@ export const historySubtitle = (order: HistoryOrder) => {
 export const historyStatusStyle = (status: string) => {
   switch (status) {
     case 'completed':
-      return { backgroundColor: '#DCFCE7', color: '#15803D' };
+      return { backgroundColor: '#DCFCE7', color: '#15803D' }; // Vert
     case 'cancelled':
-      return { backgroundColor: '#FEE2E2', color: '#B91C1C' };
+    case 'failed':
+      return { backgroundColor: '#FEE2E2', color: '#B91C1C' }; // Rouge
+    case 'assigned':
+      return { backgroundColor: '#DBEAFE', color: '#1D4ED8' }; // Bleu
+    case 'enroute':
+      return { backgroundColor: '#FEF3C7', color: '#D97706' }; // Orange/Jaune
     default:
-      return { backgroundColor: '#1D4ED8', color: '#FFFFFF' };
+      return { backgroundColor: '#E5E7EB', color: '#374151' }; // Gris
   }
 };
 

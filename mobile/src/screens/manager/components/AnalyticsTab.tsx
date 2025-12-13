@@ -201,10 +201,8 @@ export function AnalyticsTab({ restaurantId, theme, isDark = false }: AnalyticsT
               key={range}
               style={[
                 styles.segment,
-                isActive && {
-                  ...styles.segmentActive,
-                  backgroundColor: currentTheme.pillActiveBg,
-                },
+                { backgroundColor: isActive ? currentTheme.pillActiveBg : 'transparent' },
+                isActive && styles.segmentActive,
               ]}
               onPress={() => {
                 if (range === 'custom') {
@@ -221,10 +219,7 @@ export function AnalyticsTab({ restaurantId, theme, isDark = false }: AnalyticsT
               <Text
                 style={[
                   styles.segmentText,
-                  {
-                    color: isActive ? currentTheme.pillActiveText : currentTheme.textSecondary,
-                  },
-                  isActive && styles.segmentTextActive,
+                  { color: isActive ? currentTheme.pillActiveText : currentTheme.textSecondary },
                 ]}
               >
                 {range === 'week'

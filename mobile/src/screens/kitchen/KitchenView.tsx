@@ -18,6 +18,20 @@ type KitchenViewProps = {
   onLogout: () => void;
 };
 
+// Fonction pour traduire les rôles en français
+const translateRole = (role: string): string => {
+  const roleTranslations: Record<string, string> = {
+    cook: 'Cuisinier',
+    chef: 'Chef',
+    manager: 'Gestionnaire',
+    driver: 'Livreur',
+    coordinator: 'Coordinateur',
+    admin: 'Administrateur',
+  };
+  
+  return roleTranslations[role.toLowerCase()] || role;
+};
+
 export function KitchenView({ staff, onLogout }: KitchenViewProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'settings'>('orders');
   const [settings, setSettings] = useState<SettingsState>({
@@ -37,14 +51,14 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
       <View style={styles.kitchenHeader}>
         <Text style={[styles.kitchenTitle, { color: theme.textPrimary }]}>Cuisine — MadakOMS</Text>
         <Text style={[styles.kitchenSubtitle, { color: theme.textSecondary }]}>
-          Rôle: {staff.role}
+          Rôle: {translateRole(staff.role)}
         </Text>
         <Text style={[styles.kitchenSubtitle, { color: theme.textSecondary }]}>
           {staff.restaurantName}
         </Text>
       </View>
 
-      <View style={styles.kitchenTabBar}>
+      <View style={[styles.kitchenTabBar, { backgroundColor: theme.surfaceMuted }]}>
         {(['orders', 'history', 'settings'] as const).map((tab) => {
           const isActive = activeTab === tab;
           return (
@@ -52,7 +66,8 @@ export function KitchenView({ staff, onLogout }: KitchenViewProps) {
               key={tab}
               style={[
                 styles.kitchenTabButton,
-                { backgroundColor: isActive ? theme.pillActiveBg : theme.surfaceMuted },
+                { backgroundColor: isActive ? theme.pillActiveBg : 'transparent' },
+                isActive && styles.kitchenTabButtonActive,
               ]}
               onPress={() => setActiveTab(tab)}
             >

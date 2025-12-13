@@ -1813,11 +1813,11 @@ export function SettingsTab({
           <TouchableOpacity
             style={[
               styles.modalCloseButton,
-              { backgroundColor: isDark ? '#7F1D1D' : '#FEE2E2', marginTop: 0 },
+              { backgroundColor: '#DC2626', marginTop: 0 },
             ]}
             onPress={onLogout}
           >
-            <Text style={[styles.modalCloseText, { color: isDark ? '#FFFFFF' : '#B91C1C' }]}>
+            <Text style={[styles.modalCloseText, { color: '#FFFFFF' }]}>
               Se déconnecter
             </Text>
           </TouchableOpacity>

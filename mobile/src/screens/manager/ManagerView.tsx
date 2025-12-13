@@ -95,7 +95,7 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
         </View>
       </View>
 
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { backgroundColor: theme.surfaceMuted }]}>
         {(['orders', 'staff', 'analytics', 'settings'] as ManagerTabId[]).map((id) => {
           const isActive = activeTab === id;
           return (
@@ -103,18 +103,15 @@ export function ManagerView({ staff, onLogout }: ManagerViewProps) {
               key={id}
               style={[
                 styles.tabButton,
-                {
-                  backgroundColor: isActive ? theme.pillActiveBg : theme.surfaceMuted,
-                },
+                { backgroundColor: isActive ? theme.pillActiveBg : 'transparent' },
+                isActive && styles.tabButtonActive,
               ]}
               onPress={() => setActiveTab(id)}
             >
               <Text
                 style={[
                   styles.tabLabel,
-                  {
-                    color: isActive ? theme.pillActiveText : theme.textSecondary,
-                  },
+                  { color: isActive ? theme.pillActiveText : theme.textSecondary },
                 ]}
               >
                 {id === 'orders'
